@@ -14,7 +14,7 @@ pub struct Ivf<R> {
     header: IvfHeader,
 }
 
-impl<R: Read + Clone> Ivf<R> {
+impl<R: Read> Ivf<R> {
     /// Creates a new IVF using the given reader.
     pub fn new(mut reader: R) -> Result<Self> {
         let mut d = vec![0u8; std::mem::size_of::<IvfHeader>()];
@@ -81,12 +81,13 @@ impl<R: Read + Clone> Ivf<R> {
     }
 
     /// Iterates over the frames inside the IVF.
-    pub fn iter(&self) -> IvfIter<R> {
+    pub fn iter(self) -> IvfIter<R> {
+        let frame_count = self.frame_count();
         IvfIter {
-            reader: self.reader.clone(),
+            reader: self.reader,
             size_buffer: [0u8; 4],
             timestamp_buffer: [0u8; 8],
-            frame_count: self.frame_count(),
+            frame_count,
         }
     }
 }
@@ -155,25 +156,6 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
-
-    #[test]
-    fn parse_ivf_ffmpeg_header() {
-        let header: Vec<u8> = vec![
-            0x44, 0x4B, 0x49, 0x46, 0x00, 0x00, 0x20, 0x00, 0x56, 0x50, 0x39, 0x30, 0x00, 0x05,
-            0xD0, 0x02, 0xE8, 0x03, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xE9, 0x19, 0x09, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x8C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00,
-        ];
-        let cursor = Cursor::new(header);
-
-        let ivf = Ivf::new(cursor).unwrap();
-
-        assert_eq!(ivf.width(), 1280);
-        assert_eq!(ivf.height(), 720);
-        assert_eq!(ivf.frame_rate_rate(), 1000); // FFMPEG doesn't seems to set the initial value properly.
-        assert_eq!(ivf.frame_rate_scale(), 1); // FFMPEG doesn't seems to set the initial value properly.
-        assert_eq!(ivf.frame_count(), 596457);
-    }
 
     #[test]
     fn parse_ivf_header() {
@@ -408,6 +390,6 @@ mod tests {
                 1
             })
             .sum();
-        assert_eq!(count, ivf.frame_count() as usize);
+        assert_eq!(count, 29);
     }
 }
