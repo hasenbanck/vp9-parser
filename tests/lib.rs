@@ -37,8 +37,11 @@ pub fn parse_vp9_chunks() {
     let file = File::open("tests/data/320-24-crf.ivf").unwrap();
     let ivf = Ivf::new(file).unwrap();
 
-    for (id, chunk) in ivf.iter().enumerate() {
-        let IvfChunk { timestamp, data } = chunk;
+    for chunk in ivf.iter() {
+        let IvfChunk {
+            timestamp: _timestamp,
+            data,
+        } = chunk;
 
         let _ = parse_vp9_chunk(data);
     }

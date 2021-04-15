@@ -58,9 +58,11 @@ pub enum Vp9Level {
 }
 
 /// A VP9 frame.
+#[derive(Clone, Debug)]
 pub struct Vp9Frame {
     profile: Vp9Profile,
     level: Vp9Level,
+    data: Vec<u8>,
 }
 
 impl Vp9Frame {
@@ -69,6 +71,7 @@ impl Vp9Frame {
         Self {
             profile: Vp9Profile::Profile0,
             level: Vp9Level::Level1,
+            data,
         }
     }
 
@@ -80,6 +83,24 @@ impl Vp9Frame {
     /// The level the frame is using.
     pub fn level(&self) -> Vp9Level {
         self.level
+    }
+
+    /// Returns a slice into the data of the uncompressed header.
+    pub fn uncompressed_header_data(&self) -> &[u8] {
+        // TODO
+        &self.data
+    }
+
+    /// Returns a slice into the data of the compressed header.
+    pub fn compressed_header_data(&self) -> &[u8] {
+        // TODO
+        &self.data
+    }
+
+    /// Returns a slice into the data of the tile with the given index.
+    pub fn tile_data(&self, _index: usize) -> Option<&[u8]> {
+        // TODO
+        None
     }
 }
 
