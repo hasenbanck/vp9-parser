@@ -1,6 +1,8 @@
 #![warn(missing_docs)]
 //! Provides tools to parse VP9 bitstreams and IVF containers.
 
+use std::convert::TryInto;
+
 pub use error::Vp9Error;
 pub use ivf::*;
 
@@ -62,6 +64,14 @@ pub struct Vp9Frame {
 }
 
 impl Vp9Frame {
+    pub(crate) fn new(data: Vec<u8>) -> Self {
+        // TODO
+        Self {
+            profile: Vp9Profile::Profile0,
+            level: Vp9Level::Level1,
+        }
+    }
+
     /// The profile the frame is using.
     pub fn profile(&self) -> Vp9Profile {
         self.profile
@@ -73,46 +83,63 @@ impl Vp9Frame {
     }
 }
 
-/*
-   About reference frames:
-   There are REF_FRAMES slots for reference frames (ref_slots[0..7]). Each reference slot contains
-   one of the previously decoded frames. Each key frame resets all reference slots with itself.refresh_frame_flags
-   from uncompressed header indicates which reference frame slots will be updated with the currently encoded frame,
-   e.g. 0b00100010 indicates that slot_1 and slot_5 will reference the current frame.
-
-   (I'm not sure if we need to track this while parsing. Most likely we only need to expose the header fields of the frame.)
-*/
-
-/* Super Blocks:
-    1. parsing the final byte of the chunk and checking that the superframe_marker equals 0b110 (0xC0)
-
-    superframe_marker f(3)
-    bytes_per_framesize_minus_1 f(2)
-    frames_in_superframe_minus_1 f(3)
-
-    SzBytes = bytes_per_framesize_minus_1 + 1
-    NumFrames = frames_in_superframe_minus_1 + 1
-
-    NOTE – It is legal for a superframe to contain just a single frame and have NumFrames equal to 1.
-
-    2. setting the total size of the superframe_index SzIndex equal to 2 + NumFrames * SzBytes,
-    3. checking that the first byte of the superframe_index matches the final byte.
-
-    superframe( sz ) {
-        for( i = 0; i < NumFrames; i++ )
-            frame( frame_sizes[ i ] )
-        superframe_index( )
-    }
-
-    superframe_index( ) {
-        superframe_header( )
-        for( i = 0; i < NumFrames; i++ )
-            frame_sizes[i] // Size: SzBytes
-        superframe_header( )
-    }
-*/
-
 /// Parses a VP9 bitstream chunk and returns the encoded frames.
-pub fn parse_vp9_chunk(chunk: Vec<u8>) -> Vec<Vp9Frame> {
-    vec![]
+pub fn parse_vp9_chunk(mut chunk: Vec<u8>) -> Vec<Vp9Frame> {
+    if chunk.is_empty() {
+        return vec![];
+    }
+
+    // Test for a super frame.
+    let last_byte_index = chunk.len() - 1;
+    let last_byte = chunk[last_byte_index];
+    if last_byte & 0b1110_0000 == 0b1100_0000 {
+        let bytes_per_framesize_minus_1 = (last_byte & 0b11000) >> 3;
+        let frames_in_superframe_minus_1 = last_byte & 0b11;
+        let bytes_size = (bytes_per_framesize_minus_1 + 1) as usize;
+        let frame_count = (frames_in_superframe_minus_1 + 1) as usize;
+        let index_size = 2 + frame_count * bytes_size;
+        let first_byte_index = chunk.len() - index_size;
+        let first_byte = chunk[first_byte_index];
+
+        // Super frame found.
+        if first_byte == last_byte {
+            let mut frames = Vec::with_capacity(frame_count);
+
+            let index_start = first_byte_index + 1;
+            let entry_size = frame_count * bytes_size;
+
+            let mut entry_data = Vec::with_capacity(entry_size);
+            entry_data.extend_from_slice(&chunk[index_start..index_start + entry_size]);
+
+            for i in 0..frame_count {
+                let frame_size = match bytes_size {
+                    1 => u8::from_le_bytes(entry_data[i..i + 1].try_into().unwrap()) as usize,
+                    2 => u16::from_le_bytes(entry_data[i * 2..(i * 2) + 2].try_into().unwrap())
+                        as usize,
+                    3 => {
+                        let bytes = &entry_data[i * 3..(i * 3) + 3];
+                        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0x0]) as usize
+                    }
+                    4 => u32::from_le_bytes(entry_data[i * 4..(i * 4) + 4].try_into().unwrap())
+                        as usize,
+                    _ => {
+                        // Byte size can be at most 4. So this should never trigger.
+                        panic!("unsupported byte_size in super frame index")
+                    }
+                };
+
+                let left_over = chunk.split_off(frame_size);
+                let frame = Vp9Frame::new(chunk);
+                frames.push(frame);
+
+                chunk = left_over;
+            }
+
+            return frames;
+        }
+    }
+
+    // Normal frame
+    let frame = Vp9Frame::new(chunk);
+    vec![frame]
 }
