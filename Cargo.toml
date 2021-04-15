@@ -1,0 +1,8 @@
+[package]
+name = "vp9_parser"
+version = "0.1.0"
+authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
+edition = "2018"
+description = "Provides tools to parse VP9 bitstreams and IVF files."
+
+[dependencies]
