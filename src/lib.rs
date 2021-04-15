@@ -33,7 +33,7 @@ pub struct Vp9Parser {
 
 impl Vp9Parser {
     /// Creates a new Vp9Parser with the given configuration.
-    pub fn Vp9Parser(config: &Vp9ParserConfig) -> Self {
+    pub fn new(config: &Vp9ParserConfig) -> Self {
         Self {
             current_width: config.width,
             current_height: config.height,

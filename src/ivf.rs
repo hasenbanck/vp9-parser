@@ -7,7 +7,7 @@ use crate::{Result, Vp9Error};
 
 /// IVF is a simple container format for raw VP8/VP9 data.
 ///
-/// Use the `iter()` to iterate over the frames.
+/// Use the `iter()` to iterate over the chunks.
 #[derive(Debug, Clone)]
 pub struct Ivf<R> {
     reader: R,
@@ -29,7 +29,7 @@ impl<R: Read> Ivf<R> {
             height: u16::from_le_bytes(d[14..=15].try_into().unwrap()),
             frame_rate_rate: u32::from_le_bytes(d[16..=19].try_into().unwrap()),
             frame_rate_scale: u32::from_le_bytes(d[20..=23].try_into().unwrap()),
-            frame_count: u32::from_le_bytes(d[24..=27].try_into().unwrap()),
+            chunk_count: u32::from_le_bytes(d[24..=27].try_into().unwrap()),
             reserved: [d[28], d[29], d[30], d[31]],
         };
 
@@ -75,24 +75,24 @@ impl<R: Read> Ivf<R> {
         self.header.frame_rate_scale
     }
 
-    /// Number of frames stored inside the IVF.
-    pub fn frame_count(&self) -> u32 {
-        self.header.frame_count
+    /// Number of chunks stored inside the IVF. A chunk can contain a frame or a super frame.
+    pub fn chunk_count(&self) -> u32 {
+        self.header.chunk_count
     }
 
-    /// Iterates over the frames inside the IVF.
+    /// Iterates over the chunks inside the IVF.
     pub fn iter(self) -> IvfIter<R> {
-        let frame_count = self.frame_count();
+        let frame_count = self.chunk_count();
         IvfIter {
             reader: self.reader,
             size_buffer: [0u8; 4],
             timestamp_buffer: [0u8; 8],
-            frame_count,
+            chunk_count: frame_count,
         }
     }
 }
 
-/// The IvF Header.
+/// The IVF Header.
 #[derive(Debug, Copy, Clone)]
 struct IvfHeader {
     signature: [u8; 4],
@@ -103,30 +103,30 @@ struct IvfHeader {
     height: u16,
     frame_rate_rate: u32,
     frame_rate_scale: u32,
-    frame_count: u32,
+    chunk_count: u32,
     reserved: [u8; 4],
 }
 
-/// Frame inside an IVF.
-pub struct IvfFrame {
-    /// The timestamp of the frame.
+/// Chunk inside an IVF. A chunk can contain a frame or a super frame.
+pub struct IvfChunk {
+    /// The timestamp of the chunk.
     pub timestamp: u64,
-    /// The data of the frame.
+    /// The data of the chunk.
     pub data: Vec<u8>,
 }
 
-/// Iterates over the frames inside the IVF.
+/// Iterates over the chunks inside the IVF.
 pub struct IvfIter<R> {
     reader: R,
     size_buffer: [u8; 4],
     timestamp_buffer: [u8; 8],
-    frame_count: u32,
+    chunk_count: u32,
 }
 
 impl<R: Read> Iterator for IvfIter<R> {
-    type Item = IvfFrame;
+    type Item = IvfChunk;
 
-    fn next(&mut self) -> Option<IvfFrame> {
+    fn next(&mut self) -> Option<IvfChunk> {
         if self.reader.read_exact(&mut self.size_buffer).is_err() {
             return None;
         }
@@ -143,11 +143,11 @@ impl<R: Read> Iterator for IvfIter<R> {
             return None;
         }
 
-        Some(IvfFrame { timestamp, data })
+        Some(IvfChunk { timestamp, data })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some(self.frame_count as usize))
+        (0, Some(self.chunk_count as usize))
     }
 }
 
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(ivf.height(), 144);
         assert_eq!(ivf.frame_rate_rate(), 30000);
         assert_eq!(ivf.frame_rate_scale(), 1000);
-        assert_eq!(ivf.frame_count(), 29);
+        assert_eq!(ivf.chunk_count(), 29);
     }
 
     #[test]
@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(ivf.height(), 144);
         assert_eq!(ivf.frame_rate_rate(), 30000);
         assert_eq!(ivf.frame_rate_scale(), 1000);
-        assert_eq!(ivf.frame_count(), 29);
+        assert_eq!(ivf.chunk_count(), 29);
 
         let mut first = true;
         let count: usize = ivf
