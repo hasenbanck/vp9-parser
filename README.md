@@ -6,7 +6,7 @@
 ![MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Apache](https://img.shields.io/badge/license-Apache-blue.svg)
 
-Provides tools to parse VP9 bitstreams and IVF files.
+Provides tools to parse VP9 bitstreams and IVF containers.
 
 ## License
 

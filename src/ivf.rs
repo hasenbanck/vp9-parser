@@ -1,8 +1,9 @@
 //! IVF parsing.
 
-use crate::{Result, Vp9Error};
 use std::convert::TryInto;
 use std::io::Read;
+
+use crate::{Result, Vp9Error};
 
 /// IVF is a simple container format for raw VP8/VP9 data.
 ///
@@ -14,7 +15,7 @@ pub struct Ivf<R> {
 }
 
 impl<R: Read + Clone> Ivf<R> {
-    /// Creates a new Ivf using the given reader.
+    /// Creates a new IVF using the given reader.
     pub fn new(mut reader: R) -> Result<Self> {
         let mut d = vec![0u8; std::mem::size_of::<IvfHeader>()];
         reader.read_exact(&mut d)?;
@@ -26,8 +27,8 @@ impl<R: Read + Clone> Ivf<R> {
             four_cc: [d[8], d[9], d[10], d[11]],
             width: u16::from_le_bytes(d[12..=13].try_into().unwrap()),
             height: u16::from_le_bytes(d[14..=15].try_into().unwrap()),
-            framerate: u32::from_le_bytes(d[16..=19].try_into().unwrap()),
-            timescale: u32::from_le_bytes(d[20..=23].try_into().unwrap()),
+            frame_rate_rate: u32::from_le_bytes(d[16..=19].try_into().unwrap()),
+            frame_rate_scale: u32::from_le_bytes(d[20..=23].try_into().unwrap()),
             frame_count: u32::from_le_bytes(d[24..=27].try_into().unwrap()),
             reserved: [d[28], d[29], d[30], d[31]],
         };
@@ -61,17 +62,17 @@ impl<R: Read + Clone> Ivf<R> {
         self.header.height
     }
 
-    /// The framerate of the video (framerate * timescale).
+    /// The framerate of the video (frame_rate_rate * frame_rate_scale).
     ///
     /// Example:
-    /// 24 fps with a timescale of 1000 -> 24000
+    /// 24 fps with a scale of 1000 -> 24000
     pub fn frame_rate_rate(&self) -> u32 {
-        self.header.framerate
+        self.header.frame_rate_rate
     }
 
     /// Divider of the seconds (integer math).
     pub fn frame_rate_scale(&self) -> u32 {
-        self.header.timescale
+        self.header.frame_rate_scale
     }
 
     /// Number of frames stored inside the IVF.
@@ -99,8 +100,8 @@ struct IvfHeader {
     four_cc: [u8; 4],
     width: u16,
     height: u16,
-    framerate: u32,
-    timescale: u32,
+    frame_rate_rate: u32,
+    frame_rate_scale: u32,
     frame_count: u32,
     reserved: [u8; 4],
 }
@@ -151,8 +152,9 @@ impl<R: Read> Iterator for IvfIter<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Cursor;
+
+    use super::*;
 
     #[test]
     fn parse_ivf_ffmpeg_header() {

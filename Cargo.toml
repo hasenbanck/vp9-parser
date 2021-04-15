@@ -3,6 +3,6 @@ name = "vp9-parser"
 version = "0.1.0"
 authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
 edition = "2018"
-description = "Provides tools to parse VP9 bitstreams and IVF files."
+description = "Provides tools to parse VP9 bitstreams and IVF containers."
 
 [dependencies]
