@@ -1,5 +1,5 @@
 [package]
-name = "vp9_parser"
+name = "vp9-parser"
 version = "0.1.0"
 authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
 edition = "2018"
