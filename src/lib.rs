@@ -3,13 +3,7 @@
 
 use std::convert::TryInto;
 
-pub use error::Vp9Error;
-pub use ivf::*;
-
-mod error;
-mod ivf;
-
-type Result<T> = std::result::Result<T, Vp9Error>;
+pub mod ivf;
 
 /// The VP9 profiles.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
@@ -122,7 +116,7 @@ pub fn parse_vp9_chunk(mut chunk: Vec<u8>) -> Vec<Vp9Frame> {
         let first_byte_index = chunk.len() - index_size;
         let first_byte = chunk[first_byte_index];
 
-        // Super frame found.
+        // Found a super frame.
         if first_byte == last_byte {
             let mut frames = Vec::with_capacity(frame_count);
 
@@ -160,7 +154,7 @@ pub fn parse_vp9_chunk(mut chunk: Vec<u8>) -> Vec<Vp9Frame> {
         }
     }
 
-    // Normal frame
+    // Normal frame.
     let frame = Vp9Frame::new(chunk);
     vec![frame]
 }

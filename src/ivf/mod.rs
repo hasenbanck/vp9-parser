@@ -1,17 +1,22 @@
-//! IVF parsing.
+//! IVF container parsing.
 
 use std::convert::TryInto;
 use std::io::Read;
 
-use crate::{Result, Vp9Error};
+pub use error::IvfError;
 
-/// IVF is a simple container format for raw VP8/VP9 data.
-///
-/// Use the `iter()` to iterate over the chunks.
+mod error;
+
+type Result<T> = std::result::Result<T, IvfError>;
+
+/// IVF is a simple container format for raw VP9 data.
 #[derive(Debug, Clone)]
 pub struct Ivf<R> {
     reader: R,
     header: IvfHeader,
+
+    size_buffer: [u8; 4],
+    timestamp_buffer: [u8; 8],
 }
 
 impl<R: Read> Ivf<R> {
@@ -29,27 +34,32 @@ impl<R: Read> Ivf<R> {
             height: u16::from_le_bytes(d[14..=15].try_into().unwrap()),
             frame_rate_rate: u32::from_le_bytes(d[16..=19].try_into().unwrap()),
             frame_rate_scale: u32::from_le_bytes(d[20..=23].try_into().unwrap()),
-            chunk_count: u32::from_le_bytes(d[24..=27].try_into().unwrap()),
+            frame_count: u32::from_le_bytes(d[24..=27].try_into().unwrap()),
             reserved: [d[28], d[29], d[30], d[31]],
         };
 
         if header.signature != [0x44, 0x4B, 0x49, 0x46] {
-            return Err(Vp9Error::InvalidHeader("invalid signature".to_owned()));
+            return Err(IvfError::InvalidHeader("invalid signature".to_owned()));
         }
 
         if header.version != 0 {
-            return Err(Vp9Error::InvalidHeader("invalid version".to_owned()));
+            return Err(IvfError::InvalidHeader("invalid version".to_owned()));
         }
 
         if header.length != 32 {
-            return Err(Vp9Error::InvalidHeader("invalid length".to_owned()));
+            return Err(IvfError::InvalidHeader("invalid length".to_owned()));
         }
 
         if header.four_cc != [0x56, 0x50, 0x39, 0x30] {
-            return Err(Vp9Error::InvalidHeader("invalid four_cc".to_owned()));
+            return Err(IvfError::InvalidHeader("invalid four_cc".to_owned()));
         }
 
-        Ok(Self { reader, header })
+        Ok(Self {
+            reader,
+            header,
+            size_buffer: [0u8; 4],
+            timestamp_buffer: [0u8; 8],
+        })
     }
 
     /// The initial width of the video.
@@ -70,30 +80,42 @@ impl<R: Read> Ivf<R> {
         self.header.frame_rate_rate
     }
 
-    /// Divider of the seconds (integer math).
+    /// Divider of the seconds.
     pub fn frame_rate_scale(&self) -> u32 {
         self.header.frame_rate_scale
     }
 
-    /// Number of chunks stored inside the IVF. A chunk can contain a frame or a super frame.
-    pub fn chunk_count(&self) -> u32 {
-        self.header.chunk_count
+    /// Number of frames stored inside the IVF. A frame can contain a frame or a super frame.
+    pub fn frame_count(&self) -> u32 {
+        self.header.frame_count
     }
 
-    /// Iterates over the chunks inside the IVF.
-    pub fn iter(self) -> IvfIter<R> {
-        let frame_count = self.chunk_count();
-        IvfIter {
-            reader: self.reader,
-            size_buffer: [0u8; 4],
-            timestamp_buffer: [0u8; 8],
-            chunk_count: frame_count,
+    /// Reads the next frame inside the IVF. Returns `None` if the end of the file has been reached.
+    ///
+    /// A frame contains a VP9 bitstream chunk which can contain either a normal frame or a super frame.
+    pub fn read_frame(&mut self) -> Result<Option<Frame>> {
+        if self.reader.read_exact(&mut self.size_buffer).is_err() {
+            return Ok(None);
         }
+        if self.reader.read_exact(&mut self.timestamp_buffer).is_err() {
+            return Err(IvfError::UnexpectedFileEnding);
+        }
+
+        let size = u32::from_le_bytes(self.size_buffer);
+        let timestamp = u64::from_le_bytes(self.timestamp_buffer);
+
+        let mut data = vec![0u8; size as usize];
+
+        if self.reader.read_exact(&mut data).is_err() {
+            return Err(IvfError::UnexpectedFileEnding);
+        }
+
+        Ok(Some(Frame { timestamp, data }))
     }
 }
 
 /// The IVF Header.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 struct IvfHeader {
     signature: [u8; 4],
     version: u16,
@@ -103,52 +125,19 @@ struct IvfHeader {
     height: u16,
     frame_rate_rate: u32,
     frame_rate_scale: u32,
-    chunk_count: u32,
+    frame_count: u32,
     reserved: [u8; 4],
 }
 
-/// Chunk inside an IVF. A chunk can contain a frame or a super frame.
-pub struct IvfChunk {
-    /// The timestamp of the chunk.
+/// Frame inside an IVF.
+///
+/// A frame can contain a VP9 bitstream chunk which contains either a frame or a super frame.
+#[derive(Debug, Clone)]
+pub struct Frame {
+    /// The timestamp of the frame.
     pub timestamp: u64,
-    /// The data of the chunk.
+    /// The data of the frame.
     pub data: Vec<u8>,
-}
-
-/// Iterates over the chunks inside the IVF.
-pub struct IvfIter<R> {
-    reader: R,
-    size_buffer: [u8; 4],
-    timestamp_buffer: [u8; 8],
-    chunk_count: u32,
-}
-
-impl<R: Read> Iterator for IvfIter<R> {
-    type Item = IvfChunk;
-
-    fn next(&mut self) -> Option<IvfChunk> {
-        if self.reader.read_exact(&mut self.size_buffer).is_err() {
-            return None;
-        }
-        if self.reader.read_exact(&mut self.timestamp_buffer).is_err() {
-            return None;
-        }
-
-        let size = u32::from_le_bytes(self.size_buffer);
-        let timestamp = u64::from_le_bytes(self.timestamp_buffer);
-
-        let mut data = vec![0u8; size as usize];
-
-        if self.reader.read_exact(&mut data).is_err() {
-            return None;
-        }
-
-        Some(IvfChunk { timestamp, data })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some(self.chunk_count as usize))
-    }
 }
 
 #[cfg(test)]
@@ -173,7 +162,7 @@ mod tests {
         assert_eq!(ivf.height(), 144);
         assert_eq!(ivf.frame_rate_rate(), 30000);
         assert_eq!(ivf.frame_rate_scale(), 1000);
-        assert_eq!(ivf.chunk_count(), 29);
+        assert_eq!(ivf.frame_count(), 29);
     }
 
     #[test]
@@ -367,29 +356,29 @@ mod tests {
         ];
 
         let cursor = Cursor::new(data);
-        let ivf = Ivf::new(cursor).unwrap();
+        let mut ivf = Ivf::new(cursor).unwrap();
 
         assert_eq!(ivf.width(), 176);
         assert_eq!(ivf.height(), 144);
         assert_eq!(ivf.frame_rate_rate(), 30000);
         assert_eq!(ivf.frame_rate_scale(), 1000);
-        assert_eq!(ivf.chunk_count(), 29);
+        assert_eq!(ivf.frame_count(), 29);
 
         let mut first = true;
-        let count: usize = ivf
-            .iter()
-            .map(|frame| {
-                if first {
-                    assert_eq!(frame.timestamp, 0);
-                    first = false;
-                } else {
-                    assert_ne!(frame.timestamp, 0);
-                }
 
-                assert_ne!(frame.data.len(), 0);
-                1
-            })
-            .sum();
+        let mut count = 0;
+        while let Some(frame) = ivf.read_frame().unwrap() {
+            if first {
+                assert_eq!(frame.timestamp, 0);
+                first = false;
+            } else {
+                assert_ne!(frame.timestamp, 0);
+            }
+
+            assert_ne!(frame.data.len(), 0);
+            count += 1;
+        }
+
         assert_eq!(count, 29);
     }
 }
