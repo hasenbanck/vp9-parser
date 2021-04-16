@@ -126,28 +126,42 @@ pub fn parse_vp9_chunk(mut chunk: Vec<u8>) -> Vec<Vp9Frame> {
             let mut entry_data = Vec::with_capacity(entry_size);
             entry_data.extend_from_slice(&chunk[index_start..index_start + entry_size]);
 
-            for i in 0..frame_count {
-                let frame_size = match bytes_size {
-                    1 => u8::from_le_bytes(entry_data[i..i + 1].try_into().unwrap()) as usize,
-                    2 => u16::from_le_bytes(entry_data[i * 2..(i * 2) + 2].try_into().unwrap())
-                        as usize,
-                    3 => {
-                        let bytes = &entry_data[i * 3..(i * 3) + 3];
-                        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0x0]) as usize
-                    }
-                    4 => u32::from_le_bytes(entry_data[i * 4..(i * 4) + 4].try_into().unwrap())
-                        as usize,
-                    _ => {
-                        // Byte size can be at most 4. So this should never trigger.
-                        panic!("unsupported byte_size in super frame index")
-                    }
-                };
+            match frame_count {
+                1 => {
+                    // Odd, but valid bitstream configuration.
+                    let frame_size = read_frame_size(&mut entry_data, bytes_size, 0);
+                    chunk.truncate(frame_size);
+                    let frame = Vp9Frame::new(chunk);
 
-                let left_over = chunk.split_off(frame_size);
-                let frame = Vp9Frame::new(chunk);
-                frames.push(frame);
+                    frames.push(frame);
+                }
+                2 => {
+                    // Most common case. The first frame produces a frame that is not displayed but
+                    // stored as a reference frame. The second frame is mostly empty and references
+                    // the previously stored frame.
+                    let frame_size = read_frame_size(&mut entry_data, bytes_size, 0);
+                    let mut left_over = chunk.split_off(frame_size);
+                    let first_frame = Vp9Frame::new(chunk);
 
-                chunk = left_over;
+                    let frame_size = read_frame_size(&mut entry_data, bytes_size, 1);
+                    left_over.truncate(frame_size);
+                    let second_frame = Vp9Frame::new(left_over);
+
+                    frames.push(first_frame);
+                    frames.push(second_frame);
+                }
+                _ => {
+                    // Odd, but also a valid bitstream configuration.
+                    for frame_index in 0..frame_count {
+                        let frame_size = read_frame_size(&mut entry_data, bytes_size, frame_index);
+
+                        let left_over = chunk.split_off(frame_size);
+                        let frame = Vp9Frame::new(chunk);
+                        frames.push(frame);
+
+                        chunk = left_over;
+                    }
+                }
             }
 
             return frames;
@@ -157,4 +171,24 @@ pub fn parse_vp9_chunk(mut chunk: Vec<u8>) -> Vec<Vp9Frame> {
     // Normal frame.
     let frame = Vp9Frame::new(chunk);
     vec![frame]
+}
+
+fn read_frame_size(entry_data: &mut Vec<u8>, bytes_size: usize, index: usize) -> usize {
+    let frame_size =
+        match bytes_size {
+            1 => u8::from_le_bytes(entry_data[index..index + 1].try_into().unwrap()) as usize,
+            2 => u16::from_le_bytes(entry_data[index * 2..(index * 2) + 2].try_into().unwrap())
+                as usize,
+            3 => {
+                let bytes = &entry_data[index * 3..(index * 3) + 3];
+                u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0x0]) as usize
+            }
+            4 => u32::from_le_bytes(entry_data[index * 4..(index * 4) + 4].try_into().unwrap())
+                as usize,
+            _ => {
+                // Byte size can be at most 4. So this should never trigger.
+                panic!("unsupported byte_size in super frame index")
+            }
+        };
+    frame_size
 }
