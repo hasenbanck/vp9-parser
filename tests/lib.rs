@@ -34,8 +34,8 @@ pub fn parse_ivf() {
 
 #[test]
 pub fn parse_vp9_chunks() {
-    // TODO Create a test file with super frames!
-    let file = File::open("tests/data/320-24-crf.ivf").unwrap();
+    // 320-24-cq.ivf contains super frames with reference frames.
+    let file = File::open("tests/data/320-24-cq.ivf").unwrap();
     let mut ivf = Ivf::new(file).unwrap();
 
     while let Some(frame) = ivf.read_frame().unwrap() {
