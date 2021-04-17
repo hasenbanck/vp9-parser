@@ -92,7 +92,7 @@ impl<R: Read> Ivf<R> {
 
     /// Reads the next frame inside the IVF. Returns `None` if the end of the file has been reached.
     ///
-    /// A frame contains a VP9 bitstream chunk which can contain either a normal frame or a super frame.
+    /// A frame contains a VP9 bitstream packet which can contain either a normal frame or a super frame.
     pub fn read_frame(&mut self) -> Result<Option<Frame>> {
         if self.reader.read_exact(&mut self.size_buffer).is_err() {
             return Ok(None);
@@ -110,7 +110,10 @@ impl<R: Read> Ivf<R> {
             return Err(IvfError::UnexpectedFileEnding);
         }
 
-        Ok(Some(Frame { timestamp, data }))
+        Ok(Some(Frame {
+            timestamp,
+            packet: data,
+        }))
     }
 }
 
@@ -131,13 +134,13 @@ struct IvfHeader {
 
 /// Frame inside an IVF.
 ///
-/// A frame can contain a VP9 bitstream chunk which contains either a frame or a super frame.
+/// A frame can contain a VP9 bitstream packet which contains either a frame or a super frame.
 #[derive(Debug, Clone)]
 pub struct Frame {
     /// The timestamp of the frame.
     pub timestamp: u64,
-    /// The data of the frame.
-    pub data: Vec<u8>,
+    /// The data packet of the frame.
+    pub packet: Vec<u8>,
 }
 
 #[cfg(test)]
@@ -375,7 +378,7 @@ mod tests {
                 assert_ne!(frame.timestamp, 0);
             }
 
-            assert_ne!(frame.data.len(), 0);
+            assert_ne!(frame.packet.len(), 0);
             count += 1;
         }
 

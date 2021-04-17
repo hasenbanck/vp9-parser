@@ -37,6 +37,9 @@ impl From<std::io::Error> for IvfError {
 
 impl std::error::Error for IvfError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+        match *self {
+            IvfError::IoError(ref e) => Some(e),
+            _ => None,
+        }
     }
 }

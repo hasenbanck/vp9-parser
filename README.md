@@ -11,7 +11,8 @@ Provides tools to parse VP9 bitstreams and IVF containers.
 ## Use case
 
 This crate does not contain a VP9 decoder. It only provides the tools to parse a VP9 bitstream,
-which then could be handled by a dedicated decoder, e.g. `Vulkan Video`.
+which then could be handled by a dedicated decoder. Most likely the output will be fed into hardware
+decoders like `Vulkan Video`, `VA-API`, `VDPAU`, `NVDEC` and possibly `DXVA`.
 
 ## Roadmap
 

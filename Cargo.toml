@@ -1,8 +1,9 @@
 [package]
 name = "vp9-parser"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
 edition = "2018"
 description = "Provides tools to parse VP9 bitstreams and IVF containers."
 
 [dependencies]
+bitreader = "0.3"
