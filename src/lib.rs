@@ -174,7 +174,7 @@ impl From<bool> for ColorRange {
     }
 }
 
-/// Interpolation Filter.
+/// Type of the interpolation filter.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum InterpolationFilter {
     /// EIGHTTAP.
