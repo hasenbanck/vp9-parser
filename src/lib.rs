@@ -20,42 +20,10 @@ const LAST_FRAME: usize = 1;
 const GOLDEN_FRAME: usize = 2;
 const ALTREF_FRAME: usize = 3;
 
-/// The segmentation features.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SegmentFeatures {
-    /// Quantizer segment feature.
-    pub alt_q: bool,
-    /// Loop filter segment feature.
-    pub alt_l: bool,
-    /// Reference frame segment feature.
-    pub ref_frame: bool,
-    /// Skip segment feature.
-    pub skip_segment: bool,
-}
-
-impl From<SegmentFeatures> for [bool; 4] {
-    fn from(f: SegmentFeatures) -> Self {
-        [f.alt_q, f.alt_l, f.ref_frame, f.skip_segment]
-    }
-}
-
-/// The segmentation feature values.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SegmentFeatureValues {
-    /// Quantizer segment feature value.
-    pub alt_q: i16,
-    /// Loop filter segment feature value.
-    pub alt_l: i16,
-    /// Reference frame segment feature value.
-    pub ref_frame: i16,
-    // Skip frame segment feature value is always 0.
-}
-
-impl From<SegmentFeatureValues> for [i16; 4] {
-    fn from(f: SegmentFeatureValues) -> Self {
-        [f.alt_q, f.alt_l, f.ref_frame, 0]
-    }
-}
+const SEG_LVL_ALT_Q: usize = 0;
+const SEG_LVL_ALT_L: usize = 1;
+const SEG_LVL_REF_FRAME: usize = 2;
+const SEG_LVL_SKIP: usize = 3;
 
 /// The VP9 profiles.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
@@ -280,8 +248,8 @@ pub struct Frame {
     segmentation_update_data: bool,
     segmentation_abs_or_delta_update: bool,
 
-    segment_feature_active: [SegmentFeatures; 8],
-    segment_feature_data: [SegmentFeatureValues; 8],
+    segment_feature_active: [[bool; 4]; 8],
+    segment_feature_data: [[i16; 4]; 8],
 }
 
 impl Default for Frame {
@@ -340,8 +308,8 @@ impl Default for Frame {
             segmentation_temporal_update: false,
             segmentation_update_data: false,
             segmentation_abs_or_delta_update: false,
-            segment_feature_active: [Default::default(); 8],
-            segment_feature_data: [Default::default(); 8],
+            segment_feature_active: [[false; 4]; 8],
+            segment_feature_data: [[0i16; 4]; 8],
         }
     }
 }
@@ -666,13 +634,13 @@ impl Frame {
         self.segmentation_abs_or_delta_update
     }
 
-    /// Indicates that the corresponding feature is used for the reference frame.
-    pub fn segment_feature_active(&self) -> &[SegmentFeatures; 8] {
+    /// Indicates that the corresponding feature is used for the reference frames.
+    pub fn segment_feature_active(&self) -> &[[bool; 4]; 8] {
         &self.segment_feature_active
     }
 
-    /// Specifies the value of the feature data for a segment feature.
-    pub fn segment_feature_data(&self) -> &[SegmentFeatureValues; 8] {
+    /// Specifies the values of the active segment features of the reference frames.
+    pub fn segment_feature_data(&self) -> &[[i16; 4]; 8] {
         &self.segment_feature_data
     }
 }
@@ -1131,19 +1099,22 @@ impl Vp9Parser {
             if frame.segmentation_update_data {
                 frame.segmentation_abs_or_delta_update = br.read_bool()?;
                 for i in 0..MAX_SEGMENTS {
-                    frame.segment_feature_active[i].alt_q = br.read_bool()?;
-                    if frame.segment_feature_active[i].alt_q {
-                        frame.segment_feature_data[i].alt_q = br.read_inverse_i16(8)? as i16;
+                    frame.segment_feature_active[i][SEG_LVL_ALT_Q] = br.read_bool()?;
+                    if frame.segment_feature_active[i][SEG_LVL_ALT_Q] {
+                        frame.segment_feature_data[i][SEG_LVL_ALT_Q] =
+                            br.read_inverse_i16(8)? as i16;
                     };
-                    frame.segment_feature_active[i].alt_l = br.read_bool()?;
-                    if frame.segment_feature_active[i].alt_l {
-                        frame.segment_feature_data[i].alt_l = br.read_inverse_i16(6)? as i16;
+                    frame.segment_feature_active[i][SEG_LVL_ALT_L] = br.read_bool()?;
+                    if frame.segment_feature_active[i][SEG_LVL_ALT_L] {
+                        frame.segment_feature_data[i][SEG_LVL_ALT_L] =
+                            br.read_inverse_i16(6)? as i16;
                     };
-                    frame.segment_feature_active[i].ref_frame = br.read_bool()?;
-                    if frame.segment_feature_active[i].ref_frame {
-                        frame.segment_feature_data[i].ref_frame = br.read_inverse_i16(2)? as i16;
+                    frame.segment_feature_active[i][SEG_LVL_REF_FRAME] = br.read_bool()?;
+                    if frame.segment_feature_active[i][SEG_LVL_REF_FRAME] {
+                        frame.segment_feature_data[i][SEG_LVL_REF_FRAME] =
+                            br.read_inverse_i16(2)? as i16;
                     };
-                    frame.segment_feature_active[i].skip_segment = br.read_bool()?;
+                    frame.segment_feature_active[i][SEG_LVL_SKIP] = br.read_bool()?;
                 }
             }
         }
