@@ -269,7 +269,7 @@ pub struct Frame {
 
 impl Frame {
     /// Creates a frame from the parser state.
-    pub fn new(
+    pub(crate) fn new(
         parser: &Vp9Parser,
         uncompressed_header_size: usize,
         compressed_header_size: usize,
