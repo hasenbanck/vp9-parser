@@ -12,8 +12,14 @@ pub mod ivf;
 
 type Result<T> = std::result::Result<T, Vp9ParserError>;
 
-// Number of segments allowed in segmentation map.
+/// Number of segments allowed in segmentation map.
 const MAX_SEGMENTS: usize = 8;
+
+/// Minimum width of a tile in units of super blocks.
+const MIN_TILE_WIDTH_B64: u8 = 4;
+
+/// Maximum width of a tile in units of super blocks.
+const MAX_TILE_WIDTH_B64: u8 = 64;
 
 const INTRA_FRAME: usize = 0;
 const LAST_FRAME: usize = 1;
@@ -167,6 +173,15 @@ pub enum FrameType {
     NonKeyFrame,
 }
 
+impl From<bool> for FrameType {
+    fn from(b: bool) -> Self {
+        match b {
+            false => FrameType::KeyFrame,
+            true => FrameType::NonKeyFrame,
+        }
+    }
+}
+
 /// Defines if the frame context should be reset.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum ResetFrameContext {
@@ -248,74 +263,78 @@ pub struct Frame {
     segmentation_temporal_update: bool,
     segmentation_update_data: bool,
     segmentation_abs_or_delta_update: bool,
-
     segment_feature_active: [[bool; 4]; 8],
     segment_feature_data: [[i16; 4]; 8],
 }
 
-impl Default for Frame {
-    fn default() -> Self {
+impl Frame {
+    /// Creates a frame from the parser state.
+    pub fn new(
+        parser: &Vp9Parser,
+        uncompressed_header_size: usize,
+        compressed_header_size: usize,
+        tile_size: usize,
+        data: Vec<u8>,
+    ) -> Self {
         Self {
-            data: vec![],
-            show_existing_frame: false,
-            frame_to_show_map_idx: None,
-            profile: Profile::Profile0,
-            last_frame_type: FrameType::KeyFrame,
-            frame_type: FrameType::KeyFrame,
-            show_frame: false,
-            error_resilient_mode: false,
-            intra_only: false,
-            reset_frame_context: ResetFrameContext::No0,
-            refresh_frame_flags: 0,
-            ref_frame_indices: [0u8; 3],
-            ref_frame_sign_bias: [false; 4],
-            allow_high_precision_mv: false,
-            refresh_frame_context: false,
-            frame_parallel_decoding_mode: true,
-            frame_context_idx: 0,
-            uncompressed_header_size: 0,
-            compressed_header_size: 0,
-            tile_size: 0,
-            color_depth: ColorDepth::Depth8,
-            color_space: ColorSpace::Unknown,
-            color_range: ColorRange::StudioSwing,
-            subsampling_x: true,
-            subsampling_y: true,
-            width: 0,
-            height: 0,
-            render_width: 0,
-            render_height: 0,
-            mi_cols: 0,
-            mi_rows: 0,
-            tile_rows_log2: 0,
-            tile_cols_log2: 0,
-            interpolation_filter: InterpolationFilter::Eighttap,
-            loop_filter_level: 0,
-            loop_filter_sharpness: 0,
-            loop_filter_delta_enabled: false,
-            update_ref_delta: false,
-            loop_filter_ref_deltas: [0i8; 4],
-            update_mode_delta: false,
-            loop_filter_mode_deltas: [0i8; 2],
-            base_q_idx: 0,
-            delta_q_y_dc: 0,
-            delta_q_uv_dc: 0,
-            delta_q_uv_ac: 0,
-            lossless: false,
-            segmentation_enabled: false,
-            segmentation_update_map: false,
-            segment_tree_probs: [0u8; 7],
-            segment_pred_probs: [0u8; 3],
-            segmentation_temporal_update: false,
-            segmentation_update_data: false,
-            segmentation_abs_or_delta_update: false,
-            segment_feature_active: [[false; 4]; 8],
-            segment_feature_data: [[0i16; 4]; 8],
+            data,
+            profile: parser.profile,
+            show_existing_frame: parser.show_existing_frame,
+            frame_to_show_map_idx: parser.frame_to_show_map_idx,
+            last_frame_type: parser.last_frame_type,
+            frame_type: parser.frame_type,
+            show_frame: parser.show_existing_frame,
+            error_resilient_mode: parser.error_resilient_mode,
+            intra_only: parser.intra_only,
+            reset_frame_context: parser.reset_frame_context,
+            ref_frame_indices: parser.ref_frame_indices,
+            ref_frame_sign_bias: parser.ref_frame_sign_bias,
+            allow_high_precision_mv: parser.allow_high_precision_mv,
+            refresh_frame_context: parser.refresh_frame_context,
+            refresh_frame_flags: parser.refresh_frame_flags,
+            frame_parallel_decoding_mode: parser.frame_parallel_decoding_mode,
+            frame_context_idx: parser.frame_context_idx,
+            uncompressed_header_size,
+            compressed_header_size,
+            tile_size,
+            color_depth: parser.color_depth,
+            color_space: parser.color_space,
+            color_range: parser.color_range,
+            subsampling_x: parser.subsampling_x,
+            subsampling_y: parser.subsampling_y,
+            width: parser.width,
+            height: parser.height,
+            render_width: parser.render_width,
+            render_height: parser.render_height,
+            mi_cols: parser.mi_cols,
+            mi_rows: parser.mi_rows,
+            tile_rows_log2: parser.tile_rows_log2,
+            tile_cols_log2: parser.tile_cols_log2,
+            interpolation_filter: parser.interpolation_filter,
+            loop_filter_level: parser.loop_filter_level,
+            loop_filter_sharpness: parser.loop_filter_sharpness,
+            loop_filter_delta_enabled: parser.loop_filter_delta_enabled,
+            update_ref_delta: parser.update_ref_delta,
+            loop_filter_ref_deltas: parser.loop_filter_ref_deltas,
+            update_mode_delta: parser.update_mode_delta,
+            loop_filter_mode_deltas: parser.loop_filter_mode_deltas,
+            base_q_idx: parser.base_q_idx,
+            delta_q_y_dc: parser.delta_q_y_dc,
+            delta_q_uv_dc: parser.delta_q_uv_dc,
+            delta_q_uv_ac: parser.delta_q_uv_ac,
+            lossless: parser.lossless,
+            segmentation_enabled: parser.segmentation_enabled,
+            segmentation_update_map: parser.segmentation_update_map,
+            segment_tree_probs: parser.segment_tree_probs,
+            segment_pred_probs: parser.segment_pred_probs,
+            segmentation_temporal_update: parser.segmentation_temporal_update,
+            segmentation_update_data: parser.segmentation_update_data,
+            segmentation_abs_or_delta_update: parser.segmentation_abs_or_delta_update,
+            segment_feature_active: parser.segment_feature_active,
+            segment_feature_data: parser.segment_feature_data,
         }
     }
-}
 
-impl Frame {
     /// Returns a slice into the data of the compressed header.
     pub fn compressed_header_data(&self) -> &[u8] {
         &self.data[self.uncompressed_header_size
@@ -649,30 +668,115 @@ impl Frame {
 /// Parses VP9 bitstreams.
 #[derive(Clone, Debug)]
 pub struct Vp9Parser {
-    // States that need to be tracked between frames.
+    ref_frame_sizes: [(u16, u16); 8],
+    profile: Profile,
+    show_existing_frame: bool,
+    frame_to_show_map_idx: Option<u8>,
+    last_frame_type: FrameType,
+    frame_type: FrameType,
+    show_frame: bool,
+    error_resilient_mode: bool,
+    intra_only: bool,
+    reset_frame_context: ResetFrameContext,
+    ref_frame_indices: [u8; 3],
+    ref_frame_sign_bias: [bool; 4],
+    allow_high_precision_mv: bool,
+    refresh_frame_context: bool,
+    refresh_frame_flags: u8,
+    frame_parallel_decoding_mode: bool,
+    frame_context_idx: u8,
     color_depth: ColorDepth,
     color_space: ColorSpace,
     color_range: ColorRange,
     subsampling_x: bool,
     subsampling_y: bool,
-    last_frame_type: FrameType,
-    ref_frame_sizes: [(u16, u16); 8],
+    width: u16,
+    height: u16,
+    render_width: u16,
+    render_height: u16,
+    mi_cols: u16,
+    mi_rows: u16,
+    tile_rows_log2: u8,
+    tile_cols_log2: u8,
+    interpolation_filter: InterpolationFilter,
+    loop_filter_level: u8,
+    loop_filter_sharpness: u8,
+    loop_filter_delta_enabled: bool,
+    update_ref_delta: bool,
     loop_filter_ref_deltas: [i8; 4],
+    update_mode_delta: bool,
     loop_filter_mode_deltas: [i8; 2],
+    base_q_idx: i32,
+    delta_q_y_dc: i32,
+    delta_q_uv_dc: i32,
+    delta_q_uv_ac: i32,
+    lossless: bool,
+    segmentation_enabled: bool,
+    segmentation_update_map: bool,
+    segment_tree_probs: [u8; 7],
+    segment_pred_probs: [u8; 3],
+    segmentation_temporal_update: bool,
+    segmentation_update_data: bool,
+    segmentation_abs_or_delta_update: bool,
+    segment_feature_active: [[bool; 4]; 8],
+    segment_feature_data: [[i16; 4]; 8],
 }
 
 impl Default for Vp9Parser {
     fn default() -> Self {
         Self {
+            ref_frame_sizes: [(0u16, 0u16); 8],
+            show_existing_frame: false,
+            frame_to_show_map_idx: None,
+            profile: Profile::Profile0,
+            last_frame_type: FrameType::NonKeyFrame,
+            frame_type: FrameType::NonKeyFrame,
+            show_frame: false,
+            error_resilient_mode: false,
+            intra_only: false,
+            reset_frame_context: ResetFrameContext::No0,
+            refresh_frame_flags: 0,
+            ref_frame_indices: [0u8; 3],
+            ref_frame_sign_bias: [false; 4],
+            allow_high_precision_mv: false,
+            refresh_frame_context: false,
+            frame_parallel_decoding_mode: true,
+            frame_context_idx: 0,
             color_depth: ColorDepth::Depth8,
             color_space: ColorSpace::Unknown,
             color_range: ColorRange::StudioSwing,
             subsampling_x: true,
             subsampling_y: true,
-            last_frame_type: FrameType::NonKeyFrame,
-            ref_frame_sizes: [(0u16, 0u16); 8],
+            width: 0,
+            height: 0,
+            render_width: 0,
+            render_height: 0,
+            mi_cols: 0,
+            mi_rows: 0,
+            tile_rows_log2: 0,
+            tile_cols_log2: 0,
+            interpolation_filter: InterpolationFilter::Eighttap,
+            loop_filter_level: 0,
+            loop_filter_sharpness: 0,
+            loop_filter_delta_enabled: false,
+            update_ref_delta: false,
             loop_filter_ref_deltas: [1, 0, -1, -1],
+            update_mode_delta: false,
             loop_filter_mode_deltas: [0, 0],
+            base_q_idx: 0,
+            delta_q_y_dc: 0,
+            delta_q_uv_dc: 0,
+            delta_q_uv_ac: 0,
+            lossless: false,
+            segmentation_enabled: false,
+            segmentation_update_map: false,
+            segment_tree_probs: [0u8; 7],
+            segment_pred_probs: [0u8; 3],
+            segmentation_temporal_update: false,
+            segmentation_update_data: false,
+            segmentation_abs_or_delta_update: false,
+            segment_feature_active: [[false; 4]; 8],
+            segment_feature_data: [[0i16; 4]; 8],
         }
     }
 }
@@ -685,7 +789,7 @@ impl Vp9Parser {
 
     /// Resets the state of the parser. Used when switching the bitstream or seeking.
     pub fn reset(&mut self) {
-        self.last_frame_type = FrameType::NonKeyFrame
+        *self = Vp9Parser::default();
     }
 
     /// Parses a VP9 bitstream packet and returns the encoded frames.
@@ -791,10 +895,6 @@ impl Vp9Parser {
     fn parse_vp9_frame(&mut self, data: Vec<u8>) -> Result<Frame> {
         let mut br = BitReader::new(&data);
 
-        let mut frame = Frame {
-            ..Default::default()
-        };
-
         let frame_marker = br.read_u8(2)?;
         if frame_marker != 2 {
             return Err(Vp9ParserError::InvalidFrameMarker);
@@ -802,85 +902,89 @@ impl Vp9Parser {
 
         let profile_low_bit = br.read_u8(1)?;
         let profile_high_bit = br.read_u8(1)?;
-        frame.profile = ((profile_high_bit << 1) + profile_low_bit).into();
-        if frame.profile == Profile::Profile3 {
+        self.profile = ((profile_high_bit << 1) + profile_low_bit).into();
+        if self.profile == Profile::Profile3 {
             let _reserved_zero = br.read_u8(1)?;
         }
 
-        frame.show_existing_frame = br.read_bool()?;
-        if frame.show_existing_frame {
-            frame.frame_to_show_map_idx = Some(br.read_u8(3)?);
-            frame.compressed_header_size = 0;
-            frame.refresh_frame_flags = 0;
-            frame.loop_filter_level = 0;
+        self.show_existing_frame = br.read_bool()?;
+
+        if self.show_existing_frame {
+            self.frame_to_show_map_idx = Some(br.read_u8(3)?);
+            self.refresh_frame_flags = 0;
+            self.loop_filter_level = 0;
+
+            let frame = Frame::new(self, 0, 0, 0, vec![]);
             return Ok(frame);
+        } else {
+            self.frame_to_show_map_idx = None;
         }
 
-        frame.last_frame_type = self.last_frame_type;
-        let is_non_keyframe = br.read_bool()?;
-        if is_non_keyframe {
-            frame.frame_type = FrameType::NonKeyFrame
-        };
-        self.last_frame_type = frame.frame_type;
+        self.last_frame_type = self.frame_type;
+        self.frame_type = br.read_bool()?.into();
 
-        frame.show_frame = br.read_bool()?;
-        frame.error_resilient_mode = br.read_bool()?;
+        self.show_frame = br.read_bool()?;
+        self.error_resilient_mode = br.read_bool()?;
 
-        if frame.frame_type == FrameType::KeyFrame {
+        if self.frame_type == FrameType::KeyFrame {
             self.frame_sync_code(&mut br)?;
-            self.color_config(&mut br, &mut frame)?;
-            self.frame_size(&mut br, &mut frame)?;
-            self.render_size(&mut br, &mut frame)?;
-            frame.refresh_frame_flags = 0xFF;
+            self.color_config(&mut br)?;
+            self.frame_size(&mut br)?;
+            self.render_size(&mut br)?;
+            self.refresh_frame_flags = 0xFF;
         } else {
-            if !frame.show_frame {
-                frame.intra_only = br.read_bool()?
-            };
-
-            if !frame.error_resilient_mode {
-                frame.reset_frame_context = br.read_u8(2)?.into()
-            };
-
-            if frame.intra_only {
-                self.frame_sync_code(&mut br)?;
-                if frame.profile > Profile::Profile0 {
-                    self.color_config(&mut br, &mut frame)?;
-                } else {
-                    frame.color_depth = ColorDepth::Depth8;
-                    frame.color_range = ColorRange::StudioSwing;
-                    frame.color_space = ColorSpace::Bt601;
-                    frame.subsampling_x = true;
-                    frame.subsampling_y = true;
-                }
-                frame.refresh_frame_flags = br.read_u8(8)?;
-                self.frame_size(&mut br, &mut frame)?;
-                self.render_size(&mut br, &mut frame)?;
+            if !self.show_frame {
+                self.intra_only = br.read_bool()?
             } else {
-                self.sync_color_config(&mut frame);
+                self.intra_only = false;
+            };
 
-                frame.refresh_frame_flags = br.read_u8(8)?;
-                for i in 0..3 {
-                    frame.ref_frame_indices[i] = br.read_u8(3)?;
-                    frame.ref_frame_sign_bias[LAST_FRAME + i] = br.read_bool()?;
+            if !self.error_resilient_mode {
+                self.reset_frame_context = br.read_u8(2)?.into()
+            } else {
+                self.reset_frame_context = ResetFrameContext::No0;
+            };
+
+            if self.intra_only {
+                self.frame_sync_code(&mut br)?;
+                if self.profile > Profile::Profile0 {
+                    self.color_config(&mut br)?;
+                } else {
+                    self.color_depth = ColorDepth::Depth8;
+                    self.color_space = ColorSpace::Bt601;
+                    self.subsampling_x = true;
+                    self.subsampling_y = true;
                 }
-                self.frame_size_with_refs(&mut br, &mut frame)?;
-                frame.allow_high_precision_mv = br.read_bool()?;
-                self.read_interpolation_filter(&mut br, &mut frame)?;
+                self.refresh_frame_flags = br.read_u8(8)?;
+                self.frame_size(&mut br)?;
+                self.render_size(&mut br)?;
+            } else {
+                self.refresh_frame_flags = br.read_u8(8)?;
+                for i in 0..3 {
+                    self.ref_frame_indices[i] = br.read_u8(3)?;
+                    self.ref_frame_sign_bias[LAST_FRAME + i] = br.read_bool()?;
+                }
+                self.frame_size_with_refs(&mut br)?;
+                self.allow_high_precision_mv = br.read_bool()?;
+                self.read_interpolation_filter(&mut br)?;
             }
         }
 
-        if !frame.error_resilient_mode {
-            frame.refresh_frame_context = br.read_bool()?;
-            frame.frame_parallel_decoding_mode = br.read_bool()?;
+        if !self.error_resilient_mode {
+            self.refresh_frame_context = br.read_bool()?;
+            self.frame_parallel_decoding_mode = br.read_bool()?;
+        } else {
+            self.refresh_frame_context = false;
+            self.frame_parallel_decoding_mode = false;
         };
-        frame.frame_context_idx = br.read_u8(2)?;
 
-        if frame.intra_only || frame.error_resilient_mode {
-            frame.frame_context_idx = 0
+        self.frame_context_idx = br.read_u8(2)?;
+
+        if self.intra_only || self.error_resilient_mode {
+            self.frame_context_idx = 0
         }
 
-        if frame.frame_type == FrameType::KeyFrame || frame.error_resilient_mode || frame.intra_only
-        {
+        if self.frame_type == FrameType::KeyFrame || self.error_resilient_mode || self.intra_only {
             // Reset the loop filter deltas.
             self.loop_filter_ref_deltas[INTRA_FRAME] = 1;
             self.loop_filter_ref_deltas[LAST_FRAME] = 0;
@@ -889,40 +993,46 @@ impl Vp9Parser {
             self.loop_filter_mode_deltas[0] = 0;
             self.loop_filter_mode_deltas[1] = 0;
         }
-        self.loop_filter_params(&mut br, &mut frame)?;
+        self.loop_filter_params(&mut br)?;
 
-        frame.loop_filter_ref_deltas = self.loop_filter_ref_deltas;
-        frame.loop_filter_mode_deltas = self.loop_filter_mode_deltas;
+        self.quantization_params(&mut br)?;
+        self.segmentation_params(&mut br)?;
+        self.tile_info(&mut br)?;
 
-        self.quantization_params(&mut br, &mut frame)?;
-        self.segmentation_params(&mut br, &mut frame)?;
-        self.tile_info(&mut br, &mut frame)?;
-
-        frame.compressed_header_size = br.read_u16(16)? as usize;
+        let compressed_header_size = br.read_u16(16)? as usize;
         self.trailing_bits(&mut br)?;
-        frame.uncompressed_header_size = (br.position() / 8) as usize;
+        let uncompressed_header_size = (br.position() / 8) as usize;
 
         drop(br);
-        frame.data = data;
 
-        frame.tile_size =
-            frame.data.len() - (frame.uncompressed_header_size + frame.compressed_header_size);
+        let size = data.len();
+        let tile_size = size - (uncompressed_header_size + compressed_header_size);
 
-        self.refresh_ref_frames(&frame);
+        let frame = Frame::new(
+            &self,
+            uncompressed_header_size,
+            compressed_header_size,
+            tile_size,
+            data,
+        );
+
+        self.refresh_ref_frames();
 
         Ok(frame)
     }
 
     // Implements spec "8.10 Reference frame update process".
-    fn refresh_ref_frames(&mut self, frame: &Frame) {
-        let flags = frame.refresh_frame_flags;
+    fn refresh_ref_frames(&mut self) {
+        let flags = self.refresh_frame_flags;
+        let new_width = self.width;
+        let new_height = self.height;
         self.ref_frame_sizes
             .iter_mut()
             .enumerate()
             .for_each(|(i, (width, height))| {
                 if (flags >> i) & 1 == 1 {
-                    *width = frame.width;
-                    *height = frame.height;
+                    *width = new_width;
+                    *height = new_height;
                 }
             });
     }
@@ -939,130 +1049,124 @@ impl Vp9Parser {
         Ok(())
     }
 
-    fn color_config(&mut self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
-        if frame.profile >= Profile::Profile2 {
+    fn color_config(&mut self, br: &mut BitReader) -> Result<()> {
+        if self.profile >= Profile::Profile2 {
             let ten_or_twelve_bit = br.read_bool()?;
             if ten_or_twelve_bit {
                 self.color_depth = ColorDepth::Depth12;
             } else {
                 self.color_depth = ColorDepth::Depth10;
             }
+        } else {
+            self.color_depth = ColorDepth::Depth8;
         };
 
         self.color_space = br.read_u8(3)?.into();
 
         if self.color_space == ColorSpace::Rgb {
             self.color_range = ColorRange::FullSwing;
-            if frame.profile == Profile::Profile1 || frame.profile == Profile::Profile3 {
+            if self.profile == Profile::Profile1 || self.profile == Profile::Profile3 {
                 self.subsampling_x = false;
                 self.subsampling_y = false;
                 let _reserved_zero = br.read_u8(1)?;
             }
         } else {
             self.color_range = br.read_bool()?.into();
-            if frame.profile == Profile::Profile1 || frame.profile == Profile::Profile3 {
+            if self.profile == Profile::Profile1 || self.profile == Profile::Profile3 {
                 self.subsampling_x = br.read_bool()?;
                 self.subsampling_y = br.read_bool()?;
                 let _reserved_zero = br.read_u8(1)?;
+            } else {
+                self.subsampling_x = true;
+                self.subsampling_y = true;
             }
         }
 
-        self.sync_color_config(frame);
-
         Ok(())
     }
 
-    fn sync_color_config(&mut self, frame: &mut Frame) {
-        frame.color_depth = self.color_depth;
-        frame.color_range = self.color_range;
-        frame.color_space = self.color_space;
-        frame.subsampling_x = self.subsampling_x;
-        frame.subsampling_y = self.subsampling_y;
-    }
-
-    fn frame_size(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
+    fn frame_size(&mut self, br: &mut BitReader) -> Result<()> {
         let frame_width_minus_1 = br.read_u16(16)?;
         let frame_height_minus_1 = br.read_u16(16)?;
-        frame.width = frame_width_minus_1 + 1;
-        frame.height = frame_height_minus_1 + 1;
+        self.width = frame_width_minus_1 + 1;
+        self.height = frame_height_minus_1 + 1;
 
-        self.compute_image_size(frame);
+        self.compute_image_size();
 
         Ok(())
     }
 
-    fn render_size(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
+    fn render_size(&mut self, br: &mut BitReader) -> Result<()> {
         let render_and_frame_size_different = br.read_bool()?;
         if render_and_frame_size_different {
             let render_width_minus_1 = br.read_u16(16)?;
             let render_height_minus_1 = br.read_u16(16)?;
-            frame.render_width = render_width_minus_1 + 1;
-            frame.render_height = render_height_minus_1 + 1;
+            self.render_width = render_width_minus_1 + 1;
+            self.render_height = render_height_minus_1 + 1;
         } else {
-            frame.render_width = frame.width;
-            frame.render_height = frame.height;
+            self.render_width = self.width;
+            self.render_height = self.height;
         }
 
         Ok(())
     }
 
-    fn frame_size_with_refs(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
+    fn frame_size_with_refs(&mut self, br: &mut BitReader) -> Result<()> {
         let mut found_ref = false;
         for i in 0..3 {
             found_ref = br.read_bool()?;
             if found_ref {
                 let sizes = *self
                     .ref_frame_sizes
-                    .get(frame.ref_frame_indices[i] as usize)
+                    .get(self.ref_frame_indices[i] as usize)
                     .ok_or(Vp9ParserError::InvalidRefFrameIndex)?;
 
-                frame.width = sizes.0;
-                frame.height = sizes.1;
+                self.width = sizes.0;
+                self.height = sizes.1;
                 break;
             }
         }
 
         if !found_ref {
-            self.frame_size(br, frame)?;
+            self.frame_size(br)?;
         } else {
-            self.compute_image_size(frame);
+            self.compute_image_size();
         }
 
-        self.render_size(br, frame)?;
+        self.render_size(br)?;
 
         Ok(())
     }
 
-    fn compute_image_size(&self, frame: &mut Frame) {
-        frame.mi_cols = (frame.width + 7) >> 3;
-        frame.mi_rows = (frame.height + 7) >> 3;
+    fn compute_image_size(&mut self) {
+        self.mi_cols = (self.width + 7) >> 3;
+        self.mi_rows = (self.height + 7) >> 3;
     }
 
-    fn read_interpolation_filter(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
-        let literal_to_type: [InterpolationFilter; 4] = [
-            InterpolationFilter::EighttapSmooth,
-            InterpolationFilter::Eighttap,
-            InterpolationFilter::EighttapSharp,
-            InterpolationFilter::Bilinear,
-        ];
-
+    fn read_interpolation_filter(&mut self, br: &mut BitReader) -> Result<()> {
         let is_filter_switchable = br.read_bool()?;
         if is_filter_switchable {
-            frame.interpolation_filter = InterpolationFilter::Switchable;
+            self.interpolation_filter = InterpolationFilter::Switchable;
         } else {
             let raw_interpolation_filter = br.read_u8(2)?;
-            frame.interpolation_filter = literal_to_type[raw_interpolation_filter as usize]
+            self.interpolation_filter = match raw_interpolation_filter {
+                0 => InterpolationFilter::EighttapSmooth,
+                1 => InterpolationFilter::Eighttap,
+                2 => InterpolationFilter::EighttapSharp,
+                3 => InterpolationFilter::Bilinear,
+                _ => panic!("reached unreachable value"),
+            };
         }
 
         Ok(())
     }
 
-    fn loop_filter_params(&mut self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
-        frame.loop_filter_level = br.read_u8(6)?;
-        frame.loop_filter_sharpness = br.read_u8(3)?;
-        frame.loop_filter_delta_enabled = br.read_bool()?;
+    fn loop_filter_params(&mut self, br: &mut BitReader) -> Result<()> {
+        self.loop_filter_level = br.read_u8(6)?;
+        self.loop_filter_sharpness = br.read_u8(3)?;
+        self.loop_filter_delta_enabled = br.read_bool()?;
 
-        if frame.loop_filter_delta_enabled {
+        if self.loop_filter_delta_enabled {
             let loop_filter_delta_update = br.read_bool()?;
             if loop_filter_delta_update {
                 for delta in self.loop_filter_ref_deltas.iter_mut() {
@@ -1084,15 +1188,15 @@ impl Vp9Parser {
         Ok(())
     }
 
-    fn quantization_params(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
-        frame.base_q_idx = br.read_u8(8)? as i32;
-        frame.delta_q_y_dc = self.read_delta_q(br)?;
-        frame.delta_q_uv_dc = self.read_delta_q(br)?;
-        frame.delta_q_uv_ac = self.read_delta_q(br)?;
-        frame.lossless = frame.base_q_idx == 0
-            && frame.delta_q_y_dc == 0
-            && frame.delta_q_uv_dc == 0
-            && frame.delta_q_uv_ac == 0;
+    fn quantization_params(&mut self, br: &mut BitReader) -> Result<()> {
+        self.base_q_idx = br.read_u8(8)? as i32;
+        self.delta_q_y_dc = self.read_delta_q(br)?;
+        self.delta_q_uv_dc = self.read_delta_q(br)?;
+        self.delta_q_uv_ac = self.read_delta_q(br)?;
+        self.lossless = self.base_q_idx == 0
+            && self.delta_q_y_dc == 0
+            && self.delta_q_uv_dc == 0
+            && self.delta_q_uv_ac == 0;
 
         Ok(())
     }
@@ -1107,45 +1211,46 @@ impl Vp9Parser {
         }
     }
 
-    fn segmentation_params(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
-        frame.segmentation_enabled = br.read_bool()?;
-        if frame.segmentation_enabled {
-            frame.segmentation_update_map = br.read_bool()?;
-            if frame.segmentation_update_map {
-                for prob in frame.segment_tree_probs.iter_mut() {
-                    *prob = self.read_prob(br)?;
+    fn segmentation_params(&mut self, br: &mut BitReader) -> Result<()> {
+        self.segmentation_enabled = br.read_bool()?;
+        if self.segmentation_enabled {
+            self.segmentation_update_map = br.read_bool()?;
+            if self.segmentation_update_map {
+                for prob in self.segment_tree_probs.iter_mut() {
+                    *prob = Self::read_prob(br)?;
                 }
 
-                frame.segmentation_temporal_update = br.read_bool()?;
-                for prob in frame.segment_pred_probs.iter_mut() {
-                    *prob = if frame.segmentation_temporal_update {
-                        self.read_prob(br)?
+                self.segmentation_temporal_update = br.read_bool()?;
+                for prob in self.segment_pred_probs.iter_mut() {
+                    *prob = if self.segmentation_temporal_update {
+                        Self::read_prob(br)?
                     } else {
                         255
                     };
                 }
             }
 
-            frame.segmentation_update_data = br.read_bool()?;
-            if frame.segmentation_update_data {
-                frame.segmentation_abs_or_delta_update = br.read_bool()?;
+            self.segmentation_update_data = br.read_bool()?;
+            if self.segmentation_update_data {
+                self.segmentation_abs_or_delta_update = br.read_bool()?;
                 for i in 0..MAX_SEGMENTS {
-                    frame.segment_feature_active[i][SEG_LVL_ALT_Q] = br.read_bool()?;
-                    if frame.segment_feature_active[i][SEG_LVL_ALT_Q] {
-                        frame.segment_feature_data[i][SEG_LVL_ALT_Q] =
+                    self.segment_feature_active[i][SEG_LVL_ALT_Q] = br.read_bool()?;
+                    if self.segment_feature_active[i][SEG_LVL_ALT_Q] {
+                        self.segment_feature_data[i][SEG_LVL_ALT_Q] =
                             br.read_inverse_i16(8)? as i16;
                     };
-                    frame.segment_feature_active[i][SEG_LVL_ALT_L] = br.read_bool()?;
-                    if frame.segment_feature_active[i][SEG_LVL_ALT_L] {
-                        frame.segment_feature_data[i][SEG_LVL_ALT_L] =
+                    self.segment_feature_active[i][SEG_LVL_ALT_L] = br.read_bool()?;
+                    if self.segment_feature_active[i][SEG_LVL_ALT_L] {
+                        self.segment_feature_data[i][SEG_LVL_ALT_L] =
                             br.read_inverse_i16(6)? as i16;
                     };
-                    frame.segment_feature_active[i][SEG_LVL_REF_FRAME] = br.read_bool()?;
-                    if frame.segment_feature_active[i][SEG_LVL_REF_FRAME] {
-                        frame.segment_feature_data[i][SEG_LVL_REF_FRAME] =
+                    self.segment_feature_active[i][SEG_LVL_REF_FRAME] = br.read_bool()?;
+                    if self.segment_feature_active[i][SEG_LVL_REF_FRAME] {
+                        self.segment_feature_data[i][SEG_LVL_REF_FRAME] =
                             br.read_inverse_i16(2)? as i16;
                     };
-                    frame.segment_feature_active[i][SEG_LVL_SKIP] = br.read_bool()?;
+                    self.segment_feature_active[i][SEG_LVL_SKIP] = br.read_bool()?;
+                    self.segment_feature_data[i][SEG_LVL_SKIP] = 0;
                 }
             }
         }
@@ -1153,7 +1258,7 @@ impl Vp9Parser {
         Ok(())
     }
 
-    fn read_prob(&self, br: &mut BitReader) -> Result<u8> {
+    fn read_prob(br: &mut BitReader) -> Result<u8> {
         let prob_coded = br.read_bool()?;
         if prob_coded {
             let prob = br.read_u8(8)?;
@@ -1163,40 +1268,40 @@ impl Vp9Parser {
         }
     }
 
-    fn tile_info(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
-        let min_log2_tile_cols = self.calc_min_log2_tile_cols(frame);
-        let max_log2_tile_cols = self.calc_max_log2_tile_cols(frame);
-        frame.tile_rows_log2 = min_log2_tile_cols;
-        while frame.tile_rows_log2 < max_log2_tile_cols {
+    fn tile_info(&mut self, br: &mut BitReader) -> Result<()> {
+        let min_log2_tile_cols = self.calc_min_log2_tile_cols();
+        let max_log2_tile_cols = self.calc_max_log2_tile_cols();
+        self.tile_rows_log2 = min_log2_tile_cols;
+        while self.tile_rows_log2 < max_log2_tile_cols {
             let increment_tile_cols_log2 = br.read_bool()?;
             if increment_tile_cols_log2 {
-                frame.tile_cols_log2 += 1;
+                self.tile_cols_log2 += 1;
             } else {
                 break;
             }
         }
-        frame.tile_rows_log2 = br.read_u8(1)?;
-        if frame.tile_rows_log2 == 1 {
+        self.tile_rows_log2 = br.read_u8(1)?;
+        if self.tile_rows_log2 == 1 {
             let increment_tile_rows_log2 = br.read_u8(1)?;
-            frame.tile_rows_log2 += increment_tile_rows_log2;
+            self.tile_rows_log2 += increment_tile_rows_log2;
         }
 
         Ok(())
     }
 
-    fn calc_min_log2_tile_cols(&self, frame: &Frame) -> u8 {
+    fn calc_min_log2_tile_cols(&self) -> u8 {
         let mut min_log2 = 0;
-        let sb64_cols = ((frame.mi_cols + 7) >> 3) as u8;
-        while (64 << min_log2) < sb64_cols {
+        let sb64_cols = ((self.mi_cols + 7) >> 3) as u8;
+        while (MAX_TILE_WIDTH_B64 << min_log2) < sb64_cols {
             min_log2 += 1;
         }
         min_log2
     }
 
-    fn calc_max_log2_tile_cols(&self, frame: &Frame) -> u8 {
+    fn calc_max_log2_tile_cols(&self) -> u8 {
         let mut max_log2 = 1;
-        let sb64_cols = ((frame.mi_cols + 7) >> 3) as u8;
-        while (sb64_cols >> max_log2) >= 4 {
+        let sb64_cols = ((self.mi_cols + 7) >> 3) as u8;
+        while (sb64_cols >> max_log2) >= MIN_TILE_WIDTH_B64 {
             max_log2 += 1;
         }
         max_log2 - 1

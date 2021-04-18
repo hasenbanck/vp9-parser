@@ -81,7 +81,7 @@ pub fn parse_vp9_frames_and_super_frames() {
 
 #[test]
 pub fn parse_vp9_10bit() {
-    let file = File::open("tests/data/244-10bit.ivf").unwrap();
+    let file = File::open("tests/data/320-444-10bit.ivf").unwrap();
     let mut ivf = Ivf::new(file).unwrap();
     let mut parser = Vp9Parser::default();
 
@@ -97,11 +97,11 @@ pub fn parse_vp9_10bit() {
             assert_ne!(frame.compressed_header_data().len(), 0);
             assert_ne!(frame.compressed_header_and_tile_data().len(), 0);
             assert_ne!(frame.tile_data().len(), 0);
-            assert_eq!(frame.profile(), Profile::Profile2);
+            assert_eq!(frame.profile(), Profile::Profile3);
             assert_eq!(frame.color_depth(), ColorDepth::Depth10);
             assert_eq!(frame.color_range(), ColorRange::StudioSwing);
-            assert_eq!(frame.color_space(), ColorSpace::Unknown);
-            assert_eq!(frame.subsampling(), Subsampling::Yuv420);
+            assert_eq!(frame.color_space(), ColorSpace::Bt709);
+            assert_eq!(frame.subsampling(), Subsampling::Yuv444);
             assert!(!frame.show_existing_frame());
             assert!(frame.frame_to_show_map_idx().is_none());
             assert_eq!(frame.last_frame_type(), last_frame_type);
@@ -110,4 +110,33 @@ pub fn parse_vp9_10bit() {
     }
 }
 
-// TODO write a test for 4:4:4 12 bit.
+#[test]
+pub fn parse_vp9_12bit() {
+    let file = File::open("tests/data/320-444-12bit.ivf").unwrap();
+    let mut ivf = Ivf::new(file).unwrap();
+    let mut parser = Vp9Parser::default();
+
+    let mut last_frame_type = FrameType::NonKeyFrame;
+    while let Some(ivf_frame) = ivf.read_frame().unwrap() {
+        let Frame {
+            timestamp: _timestamp,
+            packet,
+        } = ivf_frame;
+
+        let frames = parser.parse_vp9_packet(packet).unwrap();
+        for frame in frames.iter() {
+            assert_ne!(frame.compressed_header_data().len(), 0);
+            assert_ne!(frame.compressed_header_and_tile_data().len(), 0);
+            assert_ne!(frame.tile_data().len(), 0);
+            assert_eq!(frame.profile(), Profile::Profile3);
+            assert_eq!(frame.color_depth(), ColorDepth::Depth12);
+            assert_eq!(frame.color_range(), ColorRange::StudioSwing);
+            assert_eq!(frame.color_space(), ColorSpace::Bt709);
+            assert_eq!(frame.subsampling(), Subsampling::Yuv444);
+            assert!(!frame.show_existing_frame());
+            assert!(frame.frame_to_show_map_idx().is_none());
+            assert_eq!(frame.last_frame_type(), last_frame_type);
+            last_frame_type = frame.frame_type();
+        }
+    }
+}
