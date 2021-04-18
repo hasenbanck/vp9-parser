@@ -12,6 +12,13 @@ pub mod ivf;
 
 type Result<T> = std::result::Result<T, Vp9ParserError>;
 
+// Number of segments allowed in segmentation map.
+const MAX_SEGMENTS: usize = 8;
+// const INTRA_FRAME: usize = 0
+const LAST_FRAME: usize = 1;
+// const GOLDEN_FRAME: usize = 2
+// const ALTREF_FRAME: usize = 3
+
 /// The VP9 profiles.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Profile {
@@ -185,11 +192,12 @@ pub struct Frame {
     reset_frame_context: ResetFrameContext,
 
     ref_frame_indices: [u8; 3],
-    ref_frame_sign_bias: [bool; 3],
+    ref_frame_sign_bias: [bool; 4],
 
     // TODO make the rest of the fields public.
     allow_high_precision_mv: bool,
     refresh_frame_context: bool,
+    refresh_frame_flags: u8,
     frame_parallel_decoding_mode: bool,
     frame_context_idx: u8,
 
@@ -209,6 +217,9 @@ pub struct Frame {
 
     tile_rows_log2: u8,
     tile_cols_log2: u8,
+
+    sb64_cols: u8,
+    sb64_rows: u8,
 
     render_width: u16,
     render_height: u16,
@@ -240,10 +251,6 @@ pub struct Frame {
 
     segment_feature_enabled: [[bool; 4]; 8],
     segment_feature_data: [[i16; 4]; 8],
-
-    // Internal values.
-    refresh_frame_flags: u8,
-    sb64_cols: u8,
 }
 
 impl Default for Frame {
@@ -261,7 +268,7 @@ impl Default for Frame {
             reset_frame_context: ResetFrameContext::No0,
             refresh_frame_flags: 0,
             ref_frame_indices: [0u8; 3],
-            ref_frame_sign_bias: [false; 3],
+            ref_frame_sign_bias: [false; 4],
             allow_high_precision_mv: false,
             refresh_frame_context: false,
             frame_parallel_decoding_mode: true,
@@ -278,6 +285,8 @@ impl Default for Frame {
             height: 0,
             tile_rows_log2: 0,
             tile_cols_log2: 0,
+            sb64_cols: 0,
+            sb64_rows: 0,
             render_width: 0,
             render_height: 0,
             interpolation_filter: InterpolationFilter::Eighttap,
@@ -302,7 +311,6 @@ impl Default for Frame {
             segmentation_abs_or_delta_update: false,
             segment_feature_enabled: [[false; 4]; 8],
             segment_feature_data: [[0i16; 4]; 8],
-            sb64_cols: 0,
         }
     }
 }
@@ -392,7 +400,7 @@ impl Frame {
     }
 
     /// Specifies the intended direction of the motion vector in time for each reference frame.
-    pub fn ref_frame_sign_bias(&self) -> &[bool; 3] {
+    pub fn ref_frame_sign_bias(&self) -> &[bool; 4] {
         &self.ref_frame_sign_bias
     }
 }
@@ -589,7 +597,7 @@ impl Vp9Parser {
                 frame.refresh_frame_flags = br.read_u8(8)?;
                 for i in 0..3 {
                     frame.ref_frame_indices[i] = br.read_u8(3)?;
-                    frame.ref_frame_sign_bias[i] = br.read_bool()?;
+                    frame.ref_frame_sign_bias[LAST_FRAME + i] = br.read_bool()?;
                 }
                 self.frame_size_with_refs(&mut br, &mut frame)?;
                 frame.allow_high_precision_mv = br.read_bool()?;
@@ -744,7 +752,9 @@ impl Vp9Parser {
 
     fn compute_image_size(&self, frame: &mut Frame) {
         let mi_cols = (frame.width + 7) >> 3;
+        let mi_rows = (frame.height + 7) >> 3;
         frame.sb64_cols = ((mi_cols + 7) >> 3) as u8;
+        frame.sb64_rows = ((mi_rows + 7) >> 3) as u8;
     }
 
     fn read_interpolation_filter(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
@@ -835,7 +845,7 @@ impl Vp9Parser {
             frame.segmentation_update_data = br.read_bool()?;
             if frame.segmentation_update_data {
                 frame.segmentation_abs_or_delta_update = br.read_bool()?;
-                for i in 0..8 {
+                for i in 0..MAX_SEGMENTS {
                     frame.segment_feature_enabled[i][0] = br.read_bool()?;
                     if frame.segment_feature_enabled[i][0] {
                         frame.segment_feature_data[i][0] = br.read_inverse_i16(8)? as i16;
