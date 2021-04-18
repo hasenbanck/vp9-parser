@@ -654,12 +654,12 @@ impl Frame {
         self.segmentation_abs_or_delta_update
     }
 
-    /// Indicates that the corresponding feature is used for the reference frames.
+    /// Indicates that the corresponding feature is used in a segment.
     pub fn segment_feature_active(&self) -> &[[bool; 4]; 8] {
         &self.segment_feature_active
     }
 
-    /// Specifies the values of the active segment features of the reference frames.
+    /// Specifies the values of the active features of a segment.
     pub fn segment_feature_data(&self) -> &[[i16; 4]; 8] {
         &self.segment_feature_data
     }
