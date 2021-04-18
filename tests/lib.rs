@@ -1,7 +1,7 @@
 use std::fs::File;
 
 use vp9_parser::ivf::{Frame, Ivf};
-use vp9_parser::{FrameType, Profile, Vp9Parser};
+use vp9_parser::{ColorDepth, ColorRange, ColorSpace, FrameType, Profile, Subsampling, Vp9Parser};
 
 #[test]
 pub fn parse_ivf() {
@@ -33,7 +33,7 @@ pub fn parse_ivf() {
 }
 
 #[test]
-pub fn parse_vp9_packets() {
+pub fn parse_vp9_frames_and_super_frames() {
     // 320-24-cq.ivf contains super frames with reference frames.
     let file = File::open("tests/data/320-24-cq.ivf").unwrap();
     let mut ivf = Ivf::new(file).unwrap();
@@ -55,6 +55,10 @@ pub fn parse_vp9_packets() {
             assert_ne!(frame.compressed_header_and_tile_data().len(), 0);
             assert_ne!(frame.tile_data().len(), 0);
             assert_eq!(frame.profile(), Profile::Profile0);
+            assert_eq!(frame.color_depth(), ColorDepth::Depth8);
+            assert_eq!(frame.color_range(), ColorRange::StudioSwing);
+            assert_eq!(frame.color_space(), ColorSpace::Bt709);
+            assert_eq!(frame.subsampling(), Subsampling::Yuv420);
             assert!(!frame.show_existing_frame());
             assert!(frame.frame_to_show_map_idx().is_none());
             assert_eq!(frame.last_frame_type(), last_frame_type);
@@ -75,6 +79,35 @@ pub fn parse_vp9_packets() {
     }
 }
 
-// TODO Create a file that produces a show_existing_frame == true file.
-// TODO Create files with different profiles, color modes, bit depths and lose less.
-// TODO Create a file with intra-only frames.
+#[test]
+pub fn parse_vp9_10bit() {
+    let file = File::open("tests/data/244-10bit.ivf").unwrap();
+    let mut ivf = Ivf::new(file).unwrap();
+    let mut parser = Vp9Parser::default();
+
+    let mut last_frame_type = FrameType::NonKeyFrame;
+    while let Some(ivf_frame) = ivf.read_frame().unwrap() {
+        let Frame {
+            timestamp: _timestamp,
+            packet,
+        } = ivf_frame;
+
+        let frames = parser.parse_vp9_packet(packet).unwrap();
+        for frame in frames.iter() {
+            assert_ne!(frame.compressed_header_data().len(), 0);
+            assert_ne!(frame.compressed_header_and_tile_data().len(), 0);
+            assert_ne!(frame.tile_data().len(), 0);
+            assert_eq!(frame.profile(), Profile::Profile2);
+            assert_eq!(frame.color_depth(), ColorDepth::Depth10);
+            assert_eq!(frame.color_range(), ColorRange::StudioSwing);
+            assert_eq!(frame.color_space(), ColorSpace::Unknown);
+            assert_eq!(frame.subsampling(), Subsampling::Yuv420);
+            assert!(!frame.show_existing_frame());
+            assert!(frame.frame_to_show_map_idx().is_none());
+            assert_eq!(frame.last_frame_type(), last_frame_type);
+            last_frame_type = frame.frame_type();
+        }
+    }
+}
+
+// TODO write a test for 4:4:4 12 bit.

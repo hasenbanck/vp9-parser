@@ -51,7 +51,10 @@ impl<R: Read> Ivf<R> {
         }
 
         if header.four_cc != [0x56, 0x50, 0x39, 0x30] {
-            return Err(IvfError::InvalidHeader("invalid four_cc".to_owned()));
+            return Err(IvfError::InvalidHeader(format!(
+                "invalid four_cc: {:?}",
+                header.four_cc
+            )));
         }
 
         Ok(Self {

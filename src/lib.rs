@@ -64,6 +64,7 @@ impl From<Profile> for u8 {
 }
 
 /// Chroma subsampling.
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Subsampling {
     /// 4:4:4 - No chrome subsampling
     Yuv444,
@@ -649,6 +650,11 @@ impl Frame {
 #[derive(Clone, Debug)]
 pub struct Vp9Parser {
     // States that need to be tracked between frames.
+    color_depth: ColorDepth,
+    color_space: ColorSpace,
+    color_range: ColorRange,
+    subsampling_x: bool,
+    subsampling_y: bool,
     last_frame_type: FrameType,
     ref_frame_sizes: [(u16, u16); 8],
     loop_filter_ref_deltas: [i8; 4],
@@ -658,6 +664,11 @@ pub struct Vp9Parser {
 impl Default for Vp9Parser {
     fn default() -> Self {
         Self {
+            color_depth: ColorDepth::Depth8,
+            color_space: ColorSpace::Unknown,
+            color_range: ColorRange::StudioSwing,
+            subsampling_x: true,
+            subsampling_y: true,
             last_frame_type: FrameType::NonKeyFrame,
             ref_frame_sizes: [(0u16, 0u16); 8],
             loop_filter_ref_deltas: [1, 0, -1, -1],
@@ -799,11 +810,15 @@ impl Vp9Parser {
         frame.show_existing_frame = br.read_bool()?;
         if frame.show_existing_frame {
             frame.frame_to_show_map_idx = Some(br.read_u8(3)?);
+            frame.compressed_header_size = 0;
+            frame.refresh_frame_flags = 0;
+            frame.loop_filter_level = 0;
             return Ok(frame);
         }
 
         frame.last_frame_type = self.last_frame_type;
-        if br.read_bool()? {
+        let is_non_keyframe = br.read_bool()?;
+        if is_non_keyframe {
             frame.frame_type = FrameType::NonKeyFrame
         };
         self.last_frame_type = frame.frame_type;
@@ -831,12 +846,18 @@ impl Vp9Parser {
                 if frame.profile > Profile::Profile0 {
                     self.color_config(&mut br, &mut frame)?;
                 } else {
+                    frame.color_depth = ColorDepth::Depth8;
+                    frame.color_range = ColorRange::StudioSwing;
                     frame.color_space = ColorSpace::Bt601;
+                    frame.subsampling_x = true;
+                    frame.subsampling_y = true;
                 }
                 frame.refresh_frame_flags = br.read_u8(8)?;
                 self.frame_size(&mut br, &mut frame)?;
                 self.render_size(&mut br, &mut frame)?;
             } else {
+                self.sync_color_config(&mut frame);
+
                 frame.refresh_frame_flags = br.read_u8(8)?;
                 for i in 0..3 {
                     frame.ref_frame_indices[i] = br.read_u8(3)?;
@@ -918,35 +939,45 @@ impl Vp9Parser {
         Ok(())
     }
 
-    fn color_config(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
+    fn color_config(&mut self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
         if frame.profile >= Profile::Profile2 {
             let ten_or_twelve_bit = br.read_bool()?;
             if ten_or_twelve_bit {
-                frame.color_depth = ColorDepth::Depth12;
+                self.color_depth = ColorDepth::Depth12;
             } else {
-                frame.color_depth = ColorDepth::Depth10;
+                self.color_depth = ColorDepth::Depth10;
             }
         };
 
-        frame.color_space = br.read_u8(3)?.into();
+        self.color_space = br.read_u8(3)?.into();
 
-        if frame.color_space == ColorSpace::Rgb {
-            frame.color_range = ColorRange::FullSwing;
+        if self.color_space == ColorSpace::Rgb {
+            self.color_range = ColorRange::FullSwing;
             if frame.profile == Profile::Profile1 || frame.profile == Profile::Profile3 {
-                frame.subsampling_x = false;
-                frame.subsampling_y = false;
+                self.subsampling_x = false;
+                self.subsampling_y = false;
                 let _reserved_zero = br.read_u8(1)?;
             }
         } else {
-            frame.color_range = br.read_bool()?.into();
+            self.color_range = br.read_bool()?.into();
             if frame.profile == Profile::Profile1 || frame.profile == Profile::Profile3 {
-                frame.subsampling_x = br.read_bool()?;
-                frame.subsampling_y = br.read_bool()?;
+                self.subsampling_x = br.read_bool()?;
+                self.subsampling_y = br.read_bool()?;
                 let _reserved_zero = br.read_u8(1)?;
             }
         }
 
+        self.sync_color_config(frame);
+
         Ok(())
+    }
+
+    fn sync_color_config(&mut self, frame: &mut Frame) {
+        frame.color_depth = self.color_depth;
+        frame.color_range = self.color_range;
+        frame.color_space = self.color_space;
+        frame.subsampling_x = self.subsampling_x;
+        frame.subsampling_y = self.subsampling_y;
     }
 
     fn frame_size(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
