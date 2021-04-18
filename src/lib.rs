@@ -14,10 +14,48 @@ type Result<T> = std::result::Result<T, Vp9ParserError>;
 
 // Number of segments allowed in segmentation map.
 const MAX_SEGMENTS: usize = 8;
-// const INTRA_FRAME: usize = 0
+
+const INTRA_FRAME: usize = 0;
 const LAST_FRAME: usize = 1;
-// const GOLDEN_FRAME: usize = 2
-// const ALTREF_FRAME: usize = 3
+const GOLDEN_FRAME: usize = 2;
+const ALTREF_FRAME: usize = 3;
+
+/// The segmentation features.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SegmentFeatures {
+    /// Quantizer segment feature.
+    pub alt_q: bool,
+    /// Loop filter segment feature.
+    pub alt_l: bool,
+    /// Reference frame segment feature.
+    pub ref_frame: bool,
+    /// Skip segment feature.
+    pub skip_segment: bool,
+}
+
+impl From<SegmentFeatures> for [bool; 4] {
+    fn from(f: SegmentFeatures) -> Self {
+        [f.alt_q, f.alt_l, f.ref_frame, f.skip_segment]
+    }
+}
+
+/// The segmentation feature values.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SegmentFeatureValues {
+    /// Quantizer segment feature value.
+    pub alt_q: i16,
+    /// Loop filter segment feature value.
+    pub alt_l: i16,
+    /// Reference frame segment feature value.
+    pub ref_frame: i16,
+    // Skip frame segment feature value is always 0.
+}
+
+impl From<SegmentFeatureValues> for [i16; 4] {
+    fn from(f: SegmentFeatureValues) -> Self {
+        [f.alt_q, f.alt_l, f.ref_frame, 0]
+    }
+}
 
 /// The VP9 profiles.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
@@ -55,6 +93,18 @@ impl From<Profile> for u8 {
             Profile::Profile3 => 3,
         }
     }
+}
+
+/// Chroma subsampling.
+pub enum Subsampling {
+    /// 4:4:4 - No chrome subsampling
+    Yuv444,
+    /// 4:4:0 - Subsampling along the y axis.
+    Yuv440,
+    /// 4:2:2 - Subsampling along the x axis.
+    Yuv422,
+    /// 4:2:0 - Subsampling along both x and y axis.
+    Yuv420,
 }
 
 /// Color space.
@@ -177,70 +227,51 @@ impl From<u8> for ResetFrameContext {
 #[derive(Clone, Debug)]
 pub struct Frame {
     data: Vec<u8>,
-
     profile: Profile,
-
     show_existing_frame: bool,
     frame_to_show_map_idx: Option<u8>,
     last_frame_type: FrameType,
     frame_type: FrameType,
-
     show_frame: bool,
     error_resilient_mode: bool,
     intra_only: bool,
-
     reset_frame_context: ResetFrameContext,
-
     ref_frame_indices: [u8; 3],
     ref_frame_sign_bias: [bool; 4],
-
-    // TODO make the rest of the fields public.
     allow_high_precision_mv: bool,
     refresh_frame_context: bool,
     refresh_frame_flags: u8,
     frame_parallel_decoding_mode: bool,
     frame_context_idx: u8,
-
     uncompressed_header_size: usize,
     compressed_header_size: usize,
     tile_size: usize,
-
     color_depth: ColorDepth,
     color_space: ColorSpace,
     color_range: ColorRange,
-
     subsampling_x: bool,
     subsampling_y: bool,
-
     width: u16,
     height: u16,
-
-    tile_rows_log2: u8,
-    tile_cols_log2: u8,
-
-    sb64_cols: u8,
-    sb64_rows: u8,
-
     render_width: u16,
     render_height: u16,
-
+    mi_cols: u16,
+    mi_rows: u16,
+    tile_rows_log2: u8,
+    tile_cols_log2: u8,
     interpolation_filter: InterpolationFilter,
-
     loop_filter_level: u8,
     loop_filter_sharpness: u8,
     loop_filter_delta_enabled: bool,
-
     update_ref_delta: bool,
     loop_filter_ref_deltas: [i8; 4],
     update_mode_delta: bool,
     loop_filter_mode_deltas: [i8; 2],
-
     base_q_idx: i32,
     delta_q_y_dc: i32,
     delta_q_uv_dc: i32,
     delta_q_uv_ac: i32,
     lossless: bool,
-
     segmentation_enabled: bool,
     segmentation_update_map: bool,
     segment_tree_probs: [u8; 7],
@@ -249,8 +280,8 @@ pub struct Frame {
     segmentation_update_data: bool,
     segmentation_abs_or_delta_update: bool,
 
-    segment_feature_enabled: [[bool; 4]; 8],
-    segment_feature_data: [[i16; 4]; 8],
+    segment_feature_active: [SegmentFeatures; 8],
+    segment_feature_data: [SegmentFeatureValues; 8],
 }
 
 impl Default for Frame {
@@ -283,12 +314,12 @@ impl Default for Frame {
             subsampling_y: true,
             width: 0,
             height: 0,
-            tile_rows_log2: 0,
-            tile_cols_log2: 0,
-            sb64_cols: 0,
-            sb64_rows: 0,
             render_width: 0,
             render_height: 0,
+            mi_cols: 0,
+            mi_rows: 0,
+            tile_rows_log2: 0,
+            tile_cols_log2: 0,
             interpolation_filter: InterpolationFilter::Eighttap,
             loop_filter_level: 0,
             loop_filter_sharpness: 0,
@@ -309,8 +340,8 @@ impl Default for Frame {
             segmentation_temporal_update: false,
             segmentation_update_data: false,
             segmentation_abs_or_delta_update: false,
-            segment_feature_enabled: [[false; 4]; 8],
-            segment_feature_data: [[0i16; 4]; 8],
+            segment_feature_active: [Default::default(); 8],
+            segment_feature_data: [Default::default(); 8],
         }
     }
 }
@@ -403,22 +434,266 @@ impl Frame {
     pub fn ref_frame_sign_bias(&self) -> &[bool; 4] {
         &self.ref_frame_sign_bias
     }
+
+    /// Specifies the precision of the motion vectors.
+    ///
+    /// False = quarter precision, True = eighth precision.
+    pub fn allow_high_precision_mv(&self) -> bool {
+        self.allow_high_precision_mv
+    }
+
+    /// Specifies that the probabilities computed for this frame
+    /// should be stored for reference by future frames.
+    pub fn refresh_frame_context(&self) -> bool {
+        self.refresh_frame_context
+    }
+
+    /// Contains a bitmask that specifies which reference frame slots
+    /// will be updated with the current frame after it is decoded.
+    ///
+    /// First bit = first frame (1). Last bit = last frame (8).
+    pub fn refresh_frame_flags(&self) -> u8 {
+        self.refresh_frame_flags
+    }
+
+    /// Specifies if parallel decoding mode is activated.
+    pub fn frame_parallel_decoding_mode(&self) -> bool {
+        self.frame_parallel_decoding_mode
+    }
+
+    /// Specifies which frame context to use.
+    pub fn frame_context_idx(&self) -> u8 {
+        self.frame_context_idx
+    }
+
+    /// The size of the uncompressed header.
+    pub fn uncompressed_header_size(&self) -> usize {
+        self.uncompressed_header_size
+    }
+
+    /// The size of the uncompressed header.
+    pub fn compressed_header_size(&self) -> usize {
+        self.compressed_header_size
+    }
+
+    /// The size of the tile data.
+    pub fn tile_size(&self) -> usize {
+        self.tile_size
+    }
+
+    /// The color depth of the frame.
+    pub fn color_depth(&self) -> ColorDepth {
+        self.color_depth
+    }
+
+    /// The color space of the frame.
+    pub fn color_space(&self) -> ColorSpace {
+        self.color_space
+    }
+
+    /// The color range of the frame.
+    pub fn color_range(&self) -> ColorRange {
+        self.color_range
+    }
+
+    /// The subsampling the frame is using.
+    pub fn subsampling(&self) -> Subsampling {
+        if !self.subsampling_x && !self.subsampling_y {
+            Subsampling::Yuv444
+        } else if !self.subsampling_x && self.subsampling_y {
+            Subsampling::Yuv440
+        } else if self.subsampling_x && !self.subsampling_y {
+            Subsampling::Yuv422
+        } else {
+            Subsampling::Yuv420
+        }
+    }
+
+    /// Indicates if sub sampling is used along the x axis.
+    pub fn subsampling_x(&self) -> bool {
+        self.subsampling_x
+    }
+
+    /// Indicates if sub sampling is used along the y axis.
+    pub fn subsampling_y(&self) -> bool {
+        self.subsampling_y
+    }
+
+    /// The width of the frame.
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+
+    /// The height of the frame.
+    pub fn height(&self) -> u16 {
+        self.height
+    }
+
+    /// A hint for the application for the desired width to render.
+    pub fn render_width(&self) -> u16 {
+        self.render_width
+    }
+
+    /// A hint for the application for the desired height to render.
+    pub fn render_height(&self) -> u16 {
+        self.render_height
+    }
+
+    /// A variable holding the vertical location of the block in units of 8x8 pixels.
+    pub fn mi_cols(&self) -> u16 {
+        self.mi_cols
+    }
+
+    /// A variable holding the horizontal location of the block in units of 8x8 pixels.
+    pub fn mi_rows(&self) -> u16 {
+        self.mi_rows
+    }
+
+    /// The base 2 logarithm of the height of each tile (where the height is measured in units
+    /// of 8x8 blocks)
+    pub fn tile_rows_log2(&self) -> u8 {
+        self.tile_rows_log2
+    }
+
+    /// The base 2 logarithm of the width of each tile (where the width is measured in units
+    /// of 8x8 blocks)
+    pub fn tile_cols_log2(&self) -> u8 {
+        self.tile_cols_log2
+    }
+
+    /// The type of filter used in inter prediction.
+    pub fn interpolation_filter(&self) -> InterpolationFilter {
+        self.interpolation_filter
+    }
+
+    /// The loop filter strength.
+    pub fn loop_filter_level(&self) -> u8 {
+        self.loop_filter_level
+    }
+
+    /// The loop filter sharpness.
+    pub fn loop_filter_sharpness(&self) -> u8 {
+        self.loop_filter_sharpness
+    }
+
+    /// Indicates that the filter level depends on the mode and reference frame
+    /// used to predict a block.
+    pub fn loop_filter_delta_enabled(&self) -> bool {
+        self.loop_filter_delta_enabled
+    }
+
+    /// Indicates that the the bitstream contains the syntax element loop_filter_ref_delta.
+    pub fn update_ref_delta(&self) -> bool {
+        self.update_ref_delta
+    }
+
+    /// Contains the adjustment needed for the filter level based on the chosen reference frame.
+    pub fn loop_filter_ref_deltas(&self) -> &[i8; 4] {
+        &self.loop_filter_ref_deltas
+    }
+
+    /// Indicates that the the bitstream contains the syntax element loop_filter_mode_deltas.
+    pub fn update_mode_delta(&self) -> bool {
+        self.update_mode_delta
+    }
+
+    /// Contains the adjustment needed for the filter level based on the chosen mode.
+    pub fn loop_filter_mode_deltas(&self) -> &[i8; 2] {
+        &self.loop_filter_mode_deltas
+    }
+
+    /// The base frame qindex. This is used for Y AC coefficients and as the base value
+    /// for the other quantizers.
+    pub fn base_q_idx(&self) -> i32 {
+        self.base_q_idx
+    }
+
+    /// The Y DC quantizer relative to base_q_idx.
+    pub fn delta_q_y_dc(&self) -> i32 {
+        self.delta_q_y_dc
+    }
+
+    /// The UV DC quantizer relative to base_q_idx.
+    pub fn delta_q_uv_dc(&self) -> i32 {
+        self.delta_q_uv_dc
+    }
+
+    /// The UV AC quantizer relative to base_q_idx.
+    pub fn delta_q_uv_ac(&self) -> i32 {
+        self.delta_q_uv_ac
+    }
+
+    /// Indicates that the frame is coded using a special 4x4 transform designed
+    /// for encoding frames that are bit-identical with the original frames.
+    pub fn lossless(&self) -> bool {
+        self.lossless
+    }
+
+    /// Specifies that this frame makes use of the segmentation tool.
+    pub fn segmentation_enabled(&self) -> bool {
+        self.segmentation_enabled
+    }
+
+    /// Specifies that the segmentation map should be updated during the decoding of this frame.
+    pub fn segmentation_update_map(&self) -> bool {
+        self.segmentation_update_map
+    }
+
+    /// The probability values to be used when decoding segment_id.
+    pub fn segment_tree_probs(&self) -> &[u8; 7] {
+        &self.segment_tree_probs
+    }
+
+    /// The probability values to be used when decoding seg_id_predicted.
+    pub fn segment_pred_probs(&self) -> &[u8; 3] {
+        &self.segment_pred_probs
+    }
+
+    /// Indicates that the updates to the segmentation map are coded
+    /// relative to the existing segmentation map.
+    pub fn segmentation_temporal_update(&self) -> bool {
+        self.segmentation_temporal_update
+    }
+
+    /// Indicates that new parameters are about to be specified for each segment.
+    pub fn segmentation_update_data(&self) -> bool {
+        self.segmentation_update_data
+    }
+
+    /// Indicates that the segmentation parameters represent the actual values to be used,
+    /// otherwise the segmentation parameters represent adjustments relative to the standard values.
+    pub fn segmentation_abs_or_delta_update(&self) -> bool {
+        self.segmentation_abs_or_delta_update
+    }
+
+    /// Indicates that the corresponding feature is used for the reference frame.
+    pub fn segment_feature_active(&self) -> &[SegmentFeatures; 8] {
+        &self.segment_feature_active
+    }
+
+    /// Specifies the value of the feature data for a segment feature.
+    pub fn segment_feature_data(&self) -> &[SegmentFeatureValues; 8] {
+        &self.segment_feature_data
+    }
 }
 
 /// Parses VP9 bitstreams.
 #[derive(Clone, Debug)]
 pub struct Vp9Parser {
+    // States that need to be tracked between frames.
     last_frame_type: FrameType,
     ref_frame_sizes: [(u16, u16); 8],
+    loop_filter_ref_deltas: [i8; 4],
+    loop_filter_mode_deltas: [i8; 2],
 }
 
 impl Default for Vp9Parser {
     fn default() -> Self {
-        // last_frame_type is undefined for the first frame, but this does not cause a problem as the first
-        // frame will be an intra frame and in this case the value for last_frame_type is not accessed.
         Self {
             last_frame_type: FrameType::NonKeyFrame,
             ref_frame_sizes: [(0u16, 0u16); 8],
+            loop_filter_ref_deltas: [1, 0, -1, -1],
+            loop_filter_mode_deltas: [0, 0],
         }
     }
 }
@@ -617,15 +892,19 @@ impl Vp9Parser {
 
         if frame.frame_type == FrameType::KeyFrame || frame.error_resilient_mode || frame.intra_only
         {
-            frame.loop_filter_ref_deltas[0] = 1;
-            frame.loop_filter_ref_deltas[1] = 0;
-            frame.loop_filter_ref_deltas[2] = -1;
-            frame.loop_filter_ref_deltas[3] = -1;
-            frame.loop_filter_mode_deltas[0] = 0;
-            frame.loop_filter_mode_deltas[1] = 0;
+            // Reset the loop filter deltas.
+            self.loop_filter_ref_deltas[INTRA_FRAME] = 1;
+            self.loop_filter_ref_deltas[LAST_FRAME] = 0;
+            self.loop_filter_ref_deltas[GOLDEN_FRAME] = -1;
+            self.loop_filter_ref_deltas[ALTREF_FRAME] = -1;
+            self.loop_filter_mode_deltas[0] = 0;
+            self.loop_filter_mode_deltas[1] = 0;
         }
-
         self.loop_filter_params(&mut br, &mut frame)?;
+
+        frame.loop_filter_ref_deltas = self.loop_filter_ref_deltas;
+        frame.loop_filter_mode_deltas = self.loop_filter_mode_deltas;
+
         self.quantization_params(&mut br, &mut frame)?;
         self.segmentation_params(&mut br, &mut frame)?;
         self.tile_info(&mut br, &mut frame)?;
@@ -698,6 +977,7 @@ impl Vp9Parser {
                 let _reserved_zero = br.read_u8(1)?;
             }
         }
+
         Ok(())
     }
 
@@ -708,6 +988,7 @@ impl Vp9Parser {
         frame.height = frame_height_minus_1 + 1;
 
         self.compute_image_size(frame);
+
         Ok(())
     }
 
@@ -722,6 +1003,7 @@ impl Vp9Parser {
             frame.render_width = frame.width;
             frame.render_height = frame.height;
         }
+
         Ok(())
     }
 
@@ -740,6 +1022,7 @@ impl Vp9Parser {
                 break;
             }
         }
+
         if !found_ref {
             self.frame_size(br, frame)?;
         } else {
@@ -747,14 +1030,13 @@ impl Vp9Parser {
         }
 
         self.render_size(br, frame)?;
+
         Ok(())
     }
 
     fn compute_image_size(&self, frame: &mut Frame) {
-        let mi_cols = (frame.width + 7) >> 3;
-        let mi_rows = (frame.height + 7) >> 3;
-        frame.sb64_cols = ((mi_cols + 7) >> 3) as u8;
-        frame.sb64_rows = ((mi_rows + 7) >> 3) as u8;
+        frame.mi_cols = (frame.width + 7) >> 3;
+        frame.mi_rows = (frame.height + 7) >> 3;
     }
 
     fn read_interpolation_filter(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
@@ -772,10 +1054,11 @@ impl Vp9Parser {
             let raw_interpolation_filter = br.read_u8(2)?;
             frame.interpolation_filter = literal_to_type[raw_interpolation_filter as usize]
         }
+
         Ok(())
     }
 
-    fn loop_filter_params(&self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
+    fn loop_filter_params(&mut self, br: &mut BitReader, frame: &mut Frame) -> Result<()> {
         frame.loop_filter_level = br.read_u8(6)?;
         frame.loop_filter_sharpness = br.read_u8(3)?;
         frame.loop_filter_delta_enabled = br.read_bool()?;
@@ -783,14 +1066,14 @@ impl Vp9Parser {
         if frame.loop_filter_delta_enabled {
             let loop_filter_delta_update = br.read_bool()?;
             if loop_filter_delta_update {
-                for delta in frame.loop_filter_ref_deltas.iter_mut() {
+                for delta in self.loop_filter_ref_deltas.iter_mut() {
                     let update_ref_delta = br.read_bool()?;
                     if update_ref_delta {
                         *delta = br.read_inverse_i8(6)?;
                     }
                 }
 
-                for mode in frame.loop_filter_mode_deltas.iter_mut() {
+                for mode in self.loop_filter_mode_deltas.iter_mut() {
                     let update_mode_delta = br.read_bool()?;
                     if update_mode_delta {
                         *mode = br.read_inverse_i8(6)?;
@@ -798,6 +1081,7 @@ impl Vp9Parser {
                 }
             }
         }
+
         Ok(())
     }
 
@@ -810,6 +1094,7 @@ impl Vp9Parser {
             && frame.delta_q_y_dc == 0
             && frame.delta_q_uv_dc == 0
             && frame.delta_q_uv_ac == 0;
+
         Ok(())
     }
 
@@ -846,22 +1131,23 @@ impl Vp9Parser {
             if frame.segmentation_update_data {
                 frame.segmentation_abs_or_delta_update = br.read_bool()?;
                 for i in 0..MAX_SEGMENTS {
-                    frame.segment_feature_enabled[i][0] = br.read_bool()?;
-                    if frame.segment_feature_enabled[i][0] {
-                        frame.segment_feature_data[i][0] = br.read_inverse_i16(8)? as i16;
+                    frame.segment_feature_active[i].alt_q = br.read_bool()?;
+                    if frame.segment_feature_active[i].alt_q {
+                        frame.segment_feature_data[i].alt_q = br.read_inverse_i16(8)? as i16;
                     };
-                    frame.segment_feature_enabled[i][1] = br.read_bool()?;
-                    if frame.segment_feature_enabled[i][1] {
-                        frame.segment_feature_data[i][1] = br.read_inverse_i16(6)? as i16;
+                    frame.segment_feature_active[i].alt_l = br.read_bool()?;
+                    if frame.segment_feature_active[i].alt_l {
+                        frame.segment_feature_data[i].alt_l = br.read_inverse_i16(6)? as i16;
                     };
-                    frame.segment_feature_enabled[i][2] = br.read_bool()?;
-                    if frame.segment_feature_enabled[i][2] {
-                        frame.segment_feature_data[i][2] = br.read_inverse_i16(2)? as i16;
+                    frame.segment_feature_active[i].ref_frame = br.read_bool()?;
+                    if frame.segment_feature_active[i].ref_frame {
+                        frame.segment_feature_data[i].ref_frame = br.read_inverse_i16(2)? as i16;
                     };
-                    frame.segment_feature_enabled[i][3] = br.read_bool()?;
+                    frame.segment_feature_active[i].skip_segment = br.read_bool()?;
                 }
             }
         }
+
         Ok(())
     }
 
@@ -892,12 +1178,14 @@ impl Vp9Parser {
             let increment_tile_rows_log2 = br.read_u8(1)?;
             frame.tile_rows_log2 += increment_tile_rows_log2;
         }
+
         Ok(())
     }
 
     fn calc_min_log2_tile_cols(&self, frame: &Frame) -> u8 {
         let mut min_log2 = 0;
-        while (64 << min_log2) < frame.sb64_cols {
+        let sb64_cols = ((frame.mi_cols + 7) >> 3) as u8;
+        while (64 << min_log2) < sb64_cols {
             min_log2 += 1;
         }
         min_log2
@@ -905,7 +1193,8 @@ impl Vp9Parser {
 
     fn calc_max_log2_tile_cols(&self, frame: &Frame) -> u8 {
         let mut max_log2 = 1;
-        while (frame.sb64_cols >> max_log2) >= 4 {
+        let sb64_cols = ((frame.mi_cols + 7) >> 3) as u8;
+        while (sb64_cols >> max_log2) >= 4 {
             max_log2 += 1;
         }
         max_log2 - 1
@@ -919,6 +1208,7 @@ impl Vp9Parser {
                 return Err(Vp9ParserError::InvalidPadding);
             }
         }
+
         Ok(())
     }
 }
