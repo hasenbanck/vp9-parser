@@ -17,6 +17,8 @@ pub enum Vp9ParserError {
     InvalidSyncByte,
     /// Invalid reference frame index.
     InvalidRefFrameIndex,
+    /// Invalid metadata.
+    InvalidMetadata,
 }
 
 impl std::fmt::Display for Vp9ParserError {
@@ -39,6 +41,9 @@ impl std::fmt::Display for Vp9ParserError {
             }
             Vp9ParserError::InvalidRefFrameIndex => {
                 write!(f, "invalid reference frame index")
+            }
+            Vp9ParserError::InvalidMetadata => {
+                write!(f, "invalid metadata")
             }
         }
     }

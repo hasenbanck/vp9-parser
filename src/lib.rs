@@ -1,6 +1,7 @@
 #![warn(missing_docs)]
 //! Provides tools to parse VP9 bitstreams and IVF containers.
 
+use std::collections::HashMap;
 use std::convert::TryInto;
 
 use bitreader::BitReader;
@@ -34,6 +35,8 @@ const SEG_LVL_SKIP: usize = 3;
 /// The VP9 profiles.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Profile {
+    /// Unknown.
+    Unknown,
     /// Color depth: 8 bit/sample, chroma subsampling: 4:2:0
     Profile0,
     /// Color depth: 8 bit, chroma subsampling: 4:2:2, 4:4:0, 4:4:4
@@ -51,9 +54,7 @@ impl From<u8> for Profile {
             1 => Profile::Profile1,
             2 => Profile::Profile2,
             3 => Profile::Profile3,
-            _ => {
-                panic!("unhandled profile")
-            }
+            _ => Profile::Unknown,
         }
     }
 }
@@ -65,6 +66,7 @@ impl From<Profile> for u8 {
             Profile::Profile1 => 1,
             Profile::Profile2 => 2,
             Profile::Profile3 => 3,
+            Profile::Unknown => u8::MAX,
         }
     }
 }
@@ -72,7 +74,7 @@ impl From<Profile> for u8 {
 /// Chroma subsampling.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Subsampling {
-    /// 4:4:4 - No chrome subsampling
+    /// 4:4:4 - No chrome subsampling.
     Yuv444,
     /// 4:4:0 - Subsampling along the y axis.
     Yuv440,
@@ -80,6 +82,33 @@ pub enum Subsampling {
     Yuv422,
     /// 4:2:0 - Subsampling along both x and y axis.
     Yuv420,
+}
+
+/// Chroma subsampling as defined in the Metadata
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub enum MetadataSubsampling {
+    /// Unknown.
+    Unknown,
+    /// 4:2:0 - Subsampling along both x and y axis.
+    Yuv420,
+    /// 4:2:0 - Chroma subsampling colocated with (0,0) luma.
+    Yuv420Colocated,
+    /// 4:2:2 - Subsampling along the x axis.
+    Yuv422,
+    /// 4:4:4 - No chrome subsampling.
+    Yuv444,
+}
+
+impl From<u8> for MetadataSubsampling {
+    fn from(d: u8) -> Self {
+        match d {
+            0 => MetadataSubsampling::Yuv420,
+            1 => MetadataSubsampling::Yuv420Colocated,
+            2 => MetadataSubsampling::Yuv422,
+            3 => MetadataSubsampling::Yuv444,
+            _ => MetadataSubsampling::Unknown,
+        }
+    }
 }
 
 /// Color space.
@@ -122,12 +151,25 @@ impl From<u8> for ColorSpace {
 /// Color depth.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum ColorDepth {
+    /// Unknown,
+    Unknown,
     /// 8 bit depth.
     Depth8,
     /// 10 bit depth.
     Depth10,
     /// 12 bit depth.
     Depth12,
+}
+
+impl From<u8> for ColorDepth {
+    fn from(d: u8) -> Self {
+        match d {
+            8 => ColorDepth::Depth8,
+            10 => ColorDepth::Depth10,
+            12 => ColorDepth::Depth12,
+            _ => ColorDepth::Unknown,
+        }
+    }
 }
 
 /// Specifies the black level and range of the luma and chroma signals as specified in
@@ -204,6 +246,126 @@ impl From<u8> for ResetFrameContext {
             3 => ResetFrameContext::FullReset,
             _ => panic!("unhandled reset context"),
         }
+    }
+}
+
+/// The codec level.
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub enum Level {
+    /// Unknown.
+    Unknown,
+    /// Level 1: 0.20 MBit/s
+    Level1,
+    /// Level 1.1: 0.80 MBit/s
+    Level1_1,
+    /// Level 2: 1.8 MBit/s
+    Level2,
+    /// Level 2.1: 3.6 MBit/s
+    Level2_1,
+    /// Level 3: 7.2 MBit/s
+    Level3,
+    /// Level 3.2: 12 MBit/s
+    Level3_1,
+    /// Level 4: 18 MBit/s
+    Level4,
+    /// Level 4.1: 30 MBit/s
+    Level4_1,
+    /// Level 5: 60 MBit/s
+    Level5,
+    /// Level 5.1: 120 MBit/s
+    Level5_1,
+    /// Level 5.2: 180 MBit/s
+    Level5_2,
+    /// Level 6: 180 MBit/s
+    Level6,
+    /// Level 6.1: 240 MBit/s
+    Level6_1,
+    /// Level 6.2: 480 MBit/s
+    Level6_2,
+}
+
+impl From<u8> for Level {
+    fn from(d: u8) -> Self {
+        match d {
+            10 => Level::Level1,
+            11 => Level::Level1_1,
+            20 => Level::Level2,
+            21 => Level::Level2_1,
+            30 => Level::Level3,
+            31 => Level::Level3_1,
+            40 => Level::Level4,
+            41 => Level::Level4_1,
+            50 => Level::Level5,
+            51 => Level::Level5_1,
+            52 => Level::Level5_2,
+            60 => Level::Level6,
+            61 => Level::Level6_1,
+            62 => Level::Level6_2,
+            _ => Level::Unknown,
+        }
+    }
+}
+
+/// VP9 Codec Feature Metadata saved inside the `CodecPrivate` field of containers.
+#[derive(Clone, Copy, Debug)]
+pub struct Metadata {
+    profile: Profile,
+    level: Level,
+    color_depth: ColorDepth,
+    chroma_subsampling: MetadataSubsampling,
+}
+
+impl Metadata {
+    /// Creates the Vp9Metadata from the given `CodecPrivate` data.
+    pub fn new(data: &[u8]) -> Result<Self> {
+        let mut pos = 0;
+
+        let mut features: HashMap<u8, u8> = HashMap::with_capacity(4);
+        while pos < data.len() {
+            let (id, value) = Self::read_feature(&mut pos, &data);
+            features.insert(id, value);
+        }
+
+        let profile = *features.get(&1).ok_or(Vp9ParserError::InvalidMetadata)?;
+        let level = *features.get(&2).ok_or(Vp9ParserError::InvalidMetadata)?;
+        let color_depth = *features.get(&3).ok_or(Vp9ParserError::InvalidMetadata)?;
+        let chroma_subsampling = *features.get(&1).ok_or(Vp9ParserError::InvalidMetadata)?;
+
+        Ok(Self {
+            profile: profile.into(),
+            level: level.into(),
+            color_depth: color_depth.into(),
+            chroma_subsampling: chroma_subsampling.into(),
+        })
+    }
+
+    /// The profile of the video.
+    pub fn profile(&self) -> Profile {
+        self.profile
+    }
+
+    /// The level of the video.
+    pub fn level(&self) -> Level {
+        self.level
+    }
+
+    /// The color depth of the video.
+    pub fn color_depth(&self) -> ColorDepth {
+        self.color_depth
+    }
+
+    /// The chroma subsampling of the video.
+    pub fn chroma_subsampling(&self) -> MetadataSubsampling {
+        self.chroma_subsampling
+    }
+
+    /// Reads the next feature. Returns the id and the value of the feature.
+    #[inline]
+    fn read_feature(pos: &mut usize, data: &[u8]) -> (u8, u8) {
+        let id = data[*pos];
+        let value = data[*pos + 1];
+        *pos += 2;
+        (id, value)
     }
 }
 
@@ -1347,5 +1509,22 @@ impl<'a> SignedRead for BitReader<'a> {
         } else {
             Ok(value as i16)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_metadata() {
+        let data: Vec<u8> = vec![0x04, 0x03, 0x03, 0x08, 0x02, 0x28, 0x01, 0x03];
+
+        let metadata = Metadata::new(&data).unwrap();
+
+        assert_eq!(metadata.profile(), Profile::Profile3);
+        assert_eq!(metadata.level(), Level::Level4);
+        assert_eq!(metadata.color_depth(), ColorDepth::Depth8);
+        assert_eq!(metadata.chroma_subsampling, MetadataSubsampling::Yuv444);
     }
 }
