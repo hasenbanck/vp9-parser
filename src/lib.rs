@@ -1,5 +1,6 @@
 #![warn(missing_docs)]
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
+#![forbid(unused_results)]
 #![deny(clippy::as_conversions)]
 #![deny(clippy::panic)]
 #![deny(clippy::unwrap_used)]
@@ -330,7 +331,7 @@ impl Metadata {
         let mut features: HashMap<u8, u8> = HashMap::with_capacity(4);
         while pos < data.len() {
             let (id, value) = Self::read_feature(&mut pos, &data);
-            features.insert(id, value);
+            let _ = features.insert(id, value);
         }
 
         let profile = *features.get(&1).ok_or(Vp9ParserError::InvalidMetadata)?;
