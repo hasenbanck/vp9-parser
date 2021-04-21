@@ -5,10 +5,14 @@ use std::error::Error;
 /// Errors that can occur when parsing VP9 frames.
 #[derive(Debug)]
 pub enum Vp9ParserError {
-    /// A bitreader::BitReaderError.
+    /// A `bitreader::BitReaderError`.
     BitReaderError(bitreader::BitReaderError),
-    /// A std::io::Error.
+    /// A `std::io::Error`.
     IoError(std::io::Error),
+    /// A `TryFromSliceError`.
+    TryFromSliceError(std::array::TryFromSliceError),
+    /// A `TryFromSliceError`.
+    TryFromIntError(std::num::TryFromIntError),
     /// Invalid frame marker.
     InvalidFrameMarker,
     /// Invalid padding.
@@ -19,6 +23,8 @@ pub enum Vp9ParserError {
     InvalidRefFrameIndex,
     /// Invalid metadata.
     InvalidMetadata,
+    /// Invalid frame_size byte size.
+    InvalidFrameSizeByteSize(usize),
 }
 
 impl std::fmt::Display for Vp9ParserError {
@@ -28,6 +34,12 @@ impl std::fmt::Display for Vp9ParserError {
                 write!(f, "{:?}", err.source())
             }
             Vp9ParserError::IoError(err) => {
+                write!(f, "{:?}", err.source())
+            }
+            Vp9ParserError::TryFromSliceError(err) => {
+                write!(f, "{:?}", err.source())
+            }
+            Vp9ParserError::TryFromIntError(err) => {
                 write!(f, "{:?}", err.source())
             }
             Vp9ParserError::InvalidFrameMarker => {
@@ -45,6 +57,9 @@ impl std::fmt::Display for Vp9ParserError {
             Vp9ParserError::InvalidMetadata => {
                 write!(f, "invalid metadata")
             }
+            Vp9ParserError::InvalidFrameSizeByteSize(size) => {
+                write!(f, "invalid frame_size byte size: {}", size)
+            }
         }
     }
 }
@@ -52,6 +67,18 @@ impl std::fmt::Display for Vp9ParserError {
 impl From<std::io::Error> for Vp9ParserError {
     fn from(err: std::io::Error) -> Vp9ParserError {
         Vp9ParserError::IoError(err)
+    }
+}
+
+impl From<std::array::TryFromSliceError> for Vp9ParserError {
+    fn from(err: std::array::TryFromSliceError) -> Vp9ParserError {
+        Vp9ParserError::TryFromSliceError(err)
+    }
+}
+
+impl From<std::num::TryFromIntError> for Vp9ParserError {
+    fn from(err: std::num::TryFromIntError) -> Vp9ParserError {
+        Vp9ParserError::TryFromIntError(err)
     }
 }
 
@@ -65,6 +92,7 @@ impl std::error::Error for Vp9ParserError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
             Vp9ParserError::IoError(ref e) => Some(e),
+            Vp9ParserError::TryFromSliceError(ref e) => Some(e),
             Vp9ParserError::BitReaderError(ref e) => Some(e),
             _ => None,
         }

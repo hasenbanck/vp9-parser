@@ -1,6 +1,6 @@
 [package]
 name = "vp9-parser"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
 description = "Provides tools to parse VP9 bitstreams and IVF containers."
 license = "Zlib OR MIT OR Apache-2.0"

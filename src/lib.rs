@@ -1,6 +1,10 @@
 #![warn(missing_docs)]
-//! Provides tools to parse VP9 bitstreams and IVF containers.
+#![deny(unsafe_code)]
+#![deny(clippy::as_conversions)]
+#![deny(clippy::panic)]
+#![deny(clippy::unwrap_used)]
 
+//! Provides tools to parse VP9 bitstreams and IVF containers.
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -135,7 +139,6 @@ pub enum ColorSpace {
 impl From<u8> for ColorSpace {
     fn from(i: u8) -> Self {
         match i {
-            0 => ColorSpace::Unknown,
             1 => ColorSpace::Bt601,
             2 => ColorSpace::Bt709,
             3 => ColorSpace::Smpte170,
@@ -143,7 +146,7 @@ impl From<u8> for ColorSpace {
             5 => ColorSpace::Bt2020,
             6 => ColorSpace::Reserved,
             7 => ColorSpace::Rgb,
-            _ => panic!("unhandled color space"),
+            _ => ColorSpace::Unknown,
         }
     }
 }
@@ -194,6 +197,8 @@ impl From<bool> for ColorRange {
 /// Type of the interpolation filter.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum InterpolationFilter {
+    /// Unknown.
+    Unknown,
     /// EIGHTTAP.
     Eighttap,
     /// EIGHTTAP_SMOOTH.
@@ -227,6 +232,8 @@ impl From<bool> for FrameType {
 /// Defines if the frame context should be reset.
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum ResetFrameContext {
+    /// Unknown.
+    Unknown,
     /// Do not reset any frame context.
     No0,
     /// Do not reset any frame context.
@@ -244,7 +251,7 @@ impl From<u8> for ResetFrameContext {
             1 => ResetFrameContext::No1,
             2 => ResetFrameContext::SingleReset,
             3 => ResetFrameContext::FullReset,
-            _ => panic!("unhandled reset context"),
+            _ => ResetFrameContext::Unknown,
         }
     }
 }
@@ -970,8 +977,8 @@ impl Vp9Parser {
         if last_byte & 0b1110_0000 == 0b1100_0000 {
             let bytes_per_framesize_minus_1 = (last_byte & 0b11000) >> 3;
             let frames_in_superframe_minus_1 = last_byte & 0b111;
-            let bytes_size = (bytes_per_framesize_minus_1 + 1) as usize;
-            let frame_count = (frames_in_superframe_minus_1 + 1) as usize;
+            let bytes_size: usize = (bytes_per_framesize_minus_1 + 1).into();
+            let frame_count: usize = (frames_in_superframe_minus_1 + 1).into();
             let index_size = 2 + frame_count * bytes_size;
             let first_byte_index = packet.len() - index_size;
             let first_byte = packet[first_byte_index];
@@ -989,7 +996,7 @@ impl Vp9Parser {
                 match frame_count {
                     1 => {
                         // Odd, but valid bitstream configuration.
-                        let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 0);
+                        let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 0)?;
                         packet.truncate(frame_size);
                         let frame = self.parse_vp9_frame(packet)?;
 
@@ -999,11 +1006,11 @@ impl Vp9Parser {
                         // Most common case. The first frame produces a frame that is not displayed but
                         // stored as a reference frame. The second frame is mostly empty and references
                         // the previously stored frame.
-                        let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 0);
+                        let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 0)?;
                         let mut left_over = packet.split_off(frame_size);
                         let first_frame = self.parse_vp9_frame(packet)?;
 
-                        let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 1);
+                        let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 1)?;
                         left_over.truncate(frame_size);
                         let second_frame = self.parse_vp9_frame(left_over)?;
 
@@ -1014,7 +1021,7 @@ impl Vp9Parser {
                         // Odd, but also a valid bitstream configuration.
                         for frame_index in 0..frame_count {
                             let frame_size =
-                                self.read_frame_size(&mut entry_data, bytes_size, frame_index);
+                                self.read_frame_size(&mut entry_data, bytes_size, frame_index)?;
 
                             let left_over = packet.split_off(frame_size);
                             let frame = self.parse_vp9_frame(packet)?;
@@ -1034,24 +1041,29 @@ impl Vp9Parser {
         Ok(vec![frame])
     }
 
-    fn read_frame_size(&self, entry_data: &mut Vec<u8>, bytes_size: usize, index: usize) -> usize {
+    fn read_frame_size(
+        &self,
+        entry_data: &mut Vec<u8>,
+        bytes_size: usize,
+        index: usize,
+    ) -> Result<usize> {
         // sic! Even though the values inside the uncompressed header are saved in BE,
         // these values are saved in LE.
-        match bytes_size {
-            1 => u8::from_le_bytes(entry_data[index..index + 1].try_into().unwrap()) as usize,
-            2 => u16::from_le_bytes(entry_data[index * 2..(index * 2) + 2].try_into().unwrap())
-                as usize,
+        let value: usize = match bytes_size {
+            1 => u8::from_le_bytes(entry_data[index..index + 1].try_into()?).into(),
+            2 => u16::from_le_bytes(entry_data[index * 2..(index * 2) + 2].try_into()?).into(),
             3 => {
                 let bytes = &entry_data[index * 3..(index * 3) + 3];
-                u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0x0]) as usize
+                u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0x0]).try_into()?
             }
-            4 => u32::from_le_bytes(entry_data[index * 4..(index * 4) + 4].try_into().unwrap())
-                as usize,
+            4 => {
+                u32::from_le_bytes(entry_data[index * 4..(index * 4) + 4].try_into()?).try_into()?
+            }
             _ => {
-                // Byte size can be at most 4. So this should never trigger.
-                panic!("unsupported byte_size in super frame index")
+                return Err(Vp9ParserError::InvalidFrameSizeByteSize(bytes_size));
             }
-        }
+        };
+        Ok(value)
     }
 
     fn parse_vp9_frame(&mut self, data: Vec<u8>) -> Result<Frame> {
@@ -1161,9 +1173,9 @@ impl Vp9Parser {
         self.segmentation_params(&mut br)?;
         self.tile_info(&mut br)?;
 
-        let compressed_header_size = br.read_u16(16)? as usize;
+        let compressed_header_size: usize = (br.read_u16(16)?).into();
         self.trailing_bits(&mut br)?;
-        let uncompressed_header_size = (br.position() / 8) as usize;
+        let uncompressed_header_size: usize = (br.position() / 8).try_into()?;
 
         drop(br);
 
@@ -1280,7 +1292,7 @@ impl Vp9Parser {
             if found_ref {
                 let sizes = *self
                     .ref_frame_sizes
-                    .get(self.ref_frame_indices[i] as usize)
+                    .get(usize::from(self.ref_frame_indices[i]))
                     .ok_or(Vp9ParserError::InvalidRefFrameIndex)?;
 
                 self.width = sizes.0;
@@ -1316,7 +1328,7 @@ impl Vp9Parser {
                 1 => InterpolationFilter::Eighttap,
                 2 => InterpolationFilter::EighttapSharp,
                 3 => InterpolationFilter::Bilinear,
-                _ => panic!("reached unreachable value"),
+                _ => InterpolationFilter::Unknown,
             };
         }
 
@@ -1351,7 +1363,7 @@ impl Vp9Parser {
     }
 
     fn quantization_params(&mut self, br: &mut BitReader) -> Result<()> {
-        self.base_q_idx = br.read_u8(8)? as i32;
+        self.base_q_idx = (br.read_u8(8)?).into();
         self.delta_q_y_dc = self.read_delta_q(br)?;
         self.delta_q_uv_dc = self.read_delta_q(br)?;
         self.delta_q_uv_ac = self.read_delta_q(br)?;
@@ -1366,7 +1378,7 @@ impl Vp9Parser {
     fn read_delta_q(&self, br: &mut BitReader) -> Result<i32> {
         let delta_coded = br.read_bool()?;
         if delta_coded {
-            let delta_q = br.read_inverse_i8(4)? as i32;
+            let delta_q = (br.read_inverse_i8(4)?).into();
             Ok(delta_q)
         } else {
             Ok(0)
@@ -1399,17 +1411,17 @@ impl Vp9Parser {
                     self.segment_feature_active[i][SEG_LVL_ALT_Q] = br.read_bool()?;
                     if self.segment_feature_active[i][SEG_LVL_ALT_Q] {
                         self.segment_feature_data[i][SEG_LVL_ALT_Q] =
-                            br.read_inverse_i16(8)? as i16;
+                            br.read_inverse_i16(8)?.into();
                     };
                     self.segment_feature_active[i][SEG_LVL_ALT_L] = br.read_bool()?;
                     if self.segment_feature_active[i][SEG_LVL_ALT_L] {
                         self.segment_feature_data[i][SEG_LVL_ALT_L] =
-                            br.read_inverse_i16(6)? as i16;
+                            br.read_inverse_i16(6)?.into();
                     };
                     self.segment_feature_active[i][SEG_LVL_REF_FRAME] = br.read_bool()?;
                     if self.segment_feature_active[i][SEG_LVL_REF_FRAME] {
                         self.segment_feature_data[i][SEG_LVL_REF_FRAME] =
-                            br.read_inverse_i16(2)? as i16;
+                            br.read_inverse_i16(2)?.into();
                     };
                     self.segment_feature_active[i][SEG_LVL_SKIP] = br.read_bool()?;
                     self.segment_feature_data[i][SEG_LVL_SKIP] = 0;
@@ -1431,8 +1443,8 @@ impl Vp9Parser {
     }
 
     fn tile_info(&mut self, br: &mut BitReader) -> Result<()> {
-        let min_log2_tile_cols = self.calc_min_log2_tile_cols();
-        let max_log2_tile_cols = self.calc_max_log2_tile_cols();
+        let min_log2_tile_cols = self.calc_min_log2_tile_cols()?;
+        let max_log2_tile_cols = self.calc_max_log2_tile_cols()?;
         self.tile_rows_log2 = min_log2_tile_cols;
         while self.tile_rows_log2 < max_log2_tile_cols {
             let increment_tile_cols_log2 = br.read_bool()?;
@@ -1451,22 +1463,22 @@ impl Vp9Parser {
         Ok(())
     }
 
-    fn calc_min_log2_tile_cols(&self) -> u8 {
+    fn calc_min_log2_tile_cols(&self) -> Result<u8> {
         let mut min_log2 = 0;
-        let sb64_cols = ((self.mi_cols + 7) >> 3) as u8;
+        let sb64_cols: u8 = ((self.mi_cols + 7) >> 3).try_into()?;
         while (MAX_TILE_WIDTH_B64 << min_log2) < sb64_cols {
             min_log2 += 1;
         }
-        min_log2
+        Ok(min_log2)
     }
 
-    fn calc_max_log2_tile_cols(&self) -> u8 {
+    fn calc_max_log2_tile_cols(&self) -> Result<u8> {
         let mut max_log2 = 1;
-        let sb64_cols = ((self.mi_cols + 7) >> 3) as u8;
+        let sb64_cols: u8 = ((self.mi_cols + 7) >> 3).try_into()?;
         while (sb64_cols >> max_log2) >= MIN_TILE_WIDTH_B64 {
             max_log2 += 1;
         }
-        max_log2 - 1
+        Ok(max_log2 - 1)
     }
 
     // Aligns the reader to the next byte offset.
@@ -1492,22 +1504,22 @@ impl<'a> SignedRead for BitReader<'a> {
     fn read_inverse_i8(&mut self, bits: u8) -> Result<i8> {
         debug_assert!(bits < 8);
 
-        let value = self.read_u8(bits)?;
+        let value: i8 = self.read_u8(bits)?.try_into()?;
         if self.read_bool()? {
-            Ok(-(value as i8))
+            Ok(-(value))
         } else {
-            Ok(value as i8)
+            Ok(value)
         }
     }
 
     fn read_inverse_i16(&mut self, bits: u8) -> Result<i16> {
         debug_assert!(bits < 16);
 
-        let value = self.read_u16(bits)?;
+        let value: i16 = self.read_u16(bits)?.try_into()?;
         if self.read_bool()? {
-            Ok(-(value as i16))
+            Ok(-(value))
         } else {
-            Ok(value as i16)
+            Ok(value)
         }
     }
 }
@@ -1517,14 +1529,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_metadata() {
+    fn parse_metadata() -> Result<()> {
         let data: Vec<u8> = vec![0x04, 0x03, 0x03, 0x08, 0x02, 0x28, 0x01, 0x03];
 
-        let metadata = Metadata::new(&data).unwrap();
+        let metadata = Metadata::new(&data)?;
 
         assert_eq!(metadata.profile(), Profile::Profile3);
         assert_eq!(metadata.level(), Level::Level4);
         assert_eq!(metadata.color_depth(), ColorDepth::Depth8);
         assert_eq!(metadata.chroma_subsampling, MetadataSubsampling::Yuv444);
+
+        Ok(())
     }
 }

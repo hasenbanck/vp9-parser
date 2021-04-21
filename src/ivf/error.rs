@@ -7,6 +7,10 @@ use std::error::Error;
 pub enum IvfError {
     /// A std::io::Error.
     IoError(std::io::Error),
+    /// A `TryFromSliceError`.
+    TryFromSliceError(std::array::TryFromSliceError),
+    /// A `TryFromSliceError`.
+    TryFromIntError(std::num::TryFromIntError),
     /// Invalid header.
     InvalidHeader(String),
     /// Unexpected file ending.
@@ -17,6 +21,12 @@ impl std::fmt::Display for IvfError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             IvfError::IoError(err) => {
+                write!(f, "{:?}", err.source())
+            }
+            IvfError::TryFromSliceError(err) => {
+                write!(f, "{:?}", err.source())
+            }
+            IvfError::TryFromIntError(err) => {
                 write!(f, "{:?}", err.source())
             }
             IvfError::InvalidHeader(message) => {
@@ -35,10 +45,23 @@ impl From<std::io::Error> for IvfError {
     }
 }
 
+impl From<std::array::TryFromSliceError> for IvfError {
+    fn from(err: std::array::TryFromSliceError) -> IvfError {
+        IvfError::TryFromSliceError(err)
+    }
+}
+
+impl From<std::num::TryFromIntError> for IvfError {
+    fn from(err: std::num::TryFromIntError) -> IvfError {
+        IvfError::TryFromIntError(err)
+    }
+}
+
 impl std::error::Error for IvfError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
             IvfError::IoError(ref e) => Some(e),
+            IvfError::TryFromSliceError(ref e) => Some(e),
             _ => None,
         }
     }

@@ -1,6 +1,6 @@
 //! IVF container parsing.
 
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::io::Read;
 
 pub use error::IvfError;
@@ -27,14 +27,14 @@ impl<R: Read> Ivf<R> {
 
         let header = IvfHeader {
             signature: [d[0], d[1], d[2], d[3]],
-            version: u16::from_le_bytes(d[4..=5].try_into().unwrap()),
-            length: u16::from_le_bytes(d[6..=7].try_into().unwrap()),
+            version: u16::from_le_bytes(d[4..=5].try_into()?),
+            length: u16::from_le_bytes(d[6..=7].try_into()?),
             four_cc: [d[8], d[9], d[10], d[11]],
-            width: u16::from_le_bytes(d[12..=13].try_into().unwrap()),
-            height: u16::from_le_bytes(d[14..=15].try_into().unwrap()),
-            frame_rate_rate: u32::from_le_bytes(d[16..=19].try_into().unwrap()),
-            frame_rate_scale: u32::from_le_bytes(d[20..=23].try_into().unwrap()),
-            frame_count: u32::from_le_bytes(d[24..=27].try_into().unwrap()),
+            width: u16::from_le_bytes(d[12..=13].try_into()?),
+            height: u16::from_le_bytes(d[14..=15].try_into()?),
+            frame_rate_rate: u32::from_le_bytes(d[16..=19].try_into()?),
+            frame_rate_scale: u32::from_le_bytes(d[20..=23].try_into()?),
+            frame_count: u32::from_le_bytes(d[24..=27].try_into()?),
             reserved: [d[28], d[29], d[30], d[31]],
         };
 
@@ -104,10 +104,10 @@ impl<R: Read> Ivf<R> {
             return Err(IvfError::UnexpectedFileEnding);
         }
 
-        let size = u32::from_le_bytes(self.size_buffer);
+        let size = usize::try_from(u32::from_le_bytes(self.size_buffer))?;
         let timestamp = u64::from_le_bytes(self.timestamp_buffer);
 
-        let mut data = vec![0u8; size as usize];
+        let mut data = vec![0u8; size];
 
         if self.reader.read_exact(&mut data).is_err() {
             return Err(IvfError::UnexpectedFileEnding);
@@ -148,6 +148,9 @@ pub struct Frame {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+    #![allow(clippy::panic)]
+
     use std::io::Cursor;
 
     use super::*;
