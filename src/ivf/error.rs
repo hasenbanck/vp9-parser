@@ -62,6 +62,7 @@ impl std::error::Error for IvfError {
         match *self {
             IvfError::IoError(ref e) => Some(e),
             IvfError::TryFromSliceError(ref e) => Some(e),
+            IvfError::TryFromIntError(ref e) => Some(e),
             _ => None,
         }
     }

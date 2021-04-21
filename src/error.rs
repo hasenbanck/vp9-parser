@@ -93,6 +93,7 @@ impl std::error::Error for Vp9ParserError {
         match *self {
             Vp9ParserError::IoError(ref e) => Some(e),
             Vp9ParserError::TryFromSliceError(ref e) => Some(e),
+            Vp9ParserError::TryFromIntError(ref e) => Some(e),
             Vp9ParserError::BitReaderError(ref e) => Some(e),
             _ => None,
         }
