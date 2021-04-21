@@ -9,7 +9,7 @@ pub enum IvfError {
     IoError(std::io::Error),
     /// A `TryFromSliceError`.
     TryFromSliceError(std::array::TryFromSliceError),
-    /// A `TryFromSliceError`.
+    /// A `TryFromIntError`.
     TryFromIntError(std::num::TryFromIntError),
     /// Invalid header.
     InvalidHeader(String),

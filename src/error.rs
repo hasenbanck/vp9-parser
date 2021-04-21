@@ -11,7 +11,7 @@ pub enum Vp9ParserError {
     IoError(std::io::Error),
     /// A `TryFromSliceError`.
     TryFromSliceError(std::array::TryFromSliceError),
-    /// A `TryFromSliceError`.
+    /// A `TryFromIntError`.
     TryFromIntError(std::num::TryFromIntError),
     /// Invalid frame marker.
     InvalidFrameMarker,
