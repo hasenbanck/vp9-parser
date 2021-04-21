@@ -1411,18 +1411,15 @@ impl Vp9Parser {
                 for i in 0..MAX_SEGMENTS {
                     self.segment_feature_active[i][SEG_LVL_ALT_Q] = br.read_bool()?;
                     if self.segment_feature_active[i][SEG_LVL_ALT_Q] {
-                        self.segment_feature_data[i][SEG_LVL_ALT_Q] =
-                            br.read_inverse_i16(8)?.into();
+                        self.segment_feature_data[i][SEG_LVL_ALT_Q] = br.read_inverse_i16(8)?;
                     };
                     self.segment_feature_active[i][SEG_LVL_ALT_L] = br.read_bool()?;
                     if self.segment_feature_active[i][SEG_LVL_ALT_L] {
-                        self.segment_feature_data[i][SEG_LVL_ALT_L] =
-                            br.read_inverse_i16(6)?.into();
+                        self.segment_feature_data[i][SEG_LVL_ALT_L] = br.read_inverse_i16(6)?;
                     };
                     self.segment_feature_active[i][SEG_LVL_REF_FRAME] = br.read_bool()?;
                     if self.segment_feature_active[i][SEG_LVL_REF_FRAME] {
-                        self.segment_feature_data[i][SEG_LVL_REF_FRAME] =
-                            br.read_inverse_i16(2)?.into();
+                        self.segment_feature_data[i][SEG_LVL_REF_FRAME] = br.read_inverse_i16(2)?;
                     };
                     self.segment_feature_active[i][SEG_LVL_SKIP] = br.read_bool()?;
                     self.segment_feature_data[i][SEG_LVL_SKIP] = 0;
