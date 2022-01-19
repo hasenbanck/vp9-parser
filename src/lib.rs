@@ -547,6 +547,11 @@ impl Frame {
         self.frame_type
     }
 
+    /// Whether to output the current frame as per 8.9
+    pub fn show_frame(&self) -> bool {
+        self.show_frame
+    }
+
     /// Indicates that error resilient mode is enabled.
     ///
     /// Error resilient mode allows the syntax of a frame to be decoded
