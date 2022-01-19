@@ -972,7 +972,7 @@ impl Vp9Parser {
     /// Packets needs to be supplied in the order they are appearing in the bitstream. The caller
     /// needs to reset the parser if the bitstream is changed or a seek happened. Not resetting the
     /// parser in such cases results in undefined behavior of the decoder.
-    pub fn parse_vp9_packet(&mut self, mut packet: Vec<u8>) -> Result<Vec<Frame>> {
+    pub fn parse_vp9_packet(&mut self, mut packet: &[u8]) -> Result<Vec<Frame>> {
         if packet.is_empty() {
             return Ok(vec![]);
         }
@@ -1003,7 +1003,7 @@ impl Vp9Parser {
                     1 => {
                         // Odd, but valid bitstream configuration.
                         let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 0)?;
-                        packet.truncate(frame_size);
+                        packet = &packet[..frame_size];
                         let frame = self.parse_vp9_frame(packet)?;
 
                         frames.push(frame);
@@ -1013,11 +1013,11 @@ impl Vp9Parser {
                         // stored as a reference frame. The second frame is mostly empty and references
                         // the previously stored frame.
                         let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 0)?;
-                        let mut left_over = packet.split_off(frame_size);
+                        let (packet, mut left_over) = packet.split_at(frame_size);
                         let first_frame = self.parse_vp9_frame(packet)?;
 
                         let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 1)?;
-                        left_over.truncate(frame_size);
+                        left_over = &left_over[..frame_size];
                         let second_frame = self.parse_vp9_frame(left_over)?;
 
                         frames.push(first_frame);
@@ -1029,8 +1029,8 @@ impl Vp9Parser {
                             let frame_size =
                                 self.read_frame_size(&mut entry_data, bytes_size, frame_index)?;
 
-                            let left_over = packet.split_off(frame_size);
-                            let frame = self.parse_vp9_frame(packet)?;
+                            let (packet_, left_over) = packet.split_at(frame_size);
+                            let frame = self.parse_vp9_frame(packet_)?;
                             frames.push(frame);
 
                             packet = left_over;
@@ -1072,7 +1072,7 @@ impl Vp9Parser {
         Ok(value)
     }
 
-    fn parse_vp9_frame(&mut self, data: Vec<u8>) -> Result<Frame> {
+    fn parse_vp9_frame(&mut self, data: &[u8]) -> Result<Frame> {
         let mut br = BitReader::new(&data);
 
         let frame_marker = br.read_u8(2)?;
@@ -1193,7 +1193,7 @@ impl Vp9Parser {
             uncompressed_header_size,
             compressed_header_size,
             tile_size,
-            data,
+            Vec::from(data),
         );
 
         self.refresh_ref_frames();
