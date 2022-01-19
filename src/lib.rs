@@ -569,8 +569,8 @@ impl Frame {
     }
 
     /// Specifies whether the frame context should be reset to default values.
-    pub fn reset_frame_context(&self) -> FrameType {
-        self.frame_type
+    pub fn reset_frame_context(&self) -> ResetFrameContext {
+        self.reset_frame_context
     }
 
     /// The indices of the used reference frames.
