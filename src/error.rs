@@ -4,7 +4,7 @@ use std::error::Error;
 
 /// Errors that can occur when parsing VP9 frames.
 #[derive(Debug)]
-pub enum Vp9ParserError {
+pub enum ParserError {
     /// A `bitreader::BitReaderError`.
     BitReaderError(bitreader::BitReaderError),
     /// A `std::io::Error`.
@@ -27,74 +27,74 @@ pub enum Vp9ParserError {
     InvalidFrameSizeByteSize(usize),
 }
 
-impl std::fmt::Display for Vp9ParserError {
+impl std::fmt::Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Vp9ParserError::BitReaderError(err) => {
+            ParserError::BitReaderError(err) => {
                 write!(f, "{:?}", err.source())
             }
-            Vp9ParserError::IoError(err) => {
+            ParserError::IoError(err) => {
                 write!(f, "{:?}", err.source())
             }
-            Vp9ParserError::TryFromSliceError(err) => {
+            ParserError::TryFromSliceError(err) => {
                 write!(f, "{:?}", err.source())
             }
-            Vp9ParserError::TryFromIntError(err) => {
+            ParserError::TryFromIntError(err) => {
                 write!(f, "{:?}", err.source())
             }
-            Vp9ParserError::InvalidFrameMarker => {
+            ParserError::InvalidFrameMarker => {
                 write!(f, "invalid frame marker")
             }
-            Vp9ParserError::InvalidPadding => {
+            ParserError::InvalidPadding => {
                 write!(f, "invalid padding")
             }
-            Vp9ParserError::InvalidSyncByte => {
+            ParserError::InvalidSyncByte => {
                 write!(f, "invalid sync byte")
             }
-            Vp9ParserError::InvalidRefFrameIndex => {
+            ParserError::InvalidRefFrameIndex => {
                 write!(f, "invalid reference frame index")
             }
-            Vp9ParserError::InvalidMetadata => {
+            ParserError::InvalidMetadata => {
                 write!(f, "invalid metadata")
             }
-            Vp9ParserError::InvalidFrameSizeByteSize(size) => {
+            ParserError::InvalidFrameSizeByteSize(size) => {
                 write!(f, "invalid frame_size byte size: {}", size)
             }
         }
     }
 }
 
-impl From<std::io::Error> for Vp9ParserError {
-    fn from(err: std::io::Error) -> Vp9ParserError {
-        Vp9ParserError::IoError(err)
+impl From<std::io::Error> for ParserError {
+    fn from(err: std::io::Error) -> ParserError {
+        ParserError::IoError(err)
     }
 }
 
-impl From<std::array::TryFromSliceError> for Vp9ParserError {
-    fn from(err: std::array::TryFromSliceError) -> Vp9ParserError {
-        Vp9ParserError::TryFromSliceError(err)
+impl From<std::array::TryFromSliceError> for ParserError {
+    fn from(err: std::array::TryFromSliceError) -> ParserError {
+        ParserError::TryFromSliceError(err)
     }
 }
 
-impl From<std::num::TryFromIntError> for Vp9ParserError {
-    fn from(err: std::num::TryFromIntError) -> Vp9ParserError {
-        Vp9ParserError::TryFromIntError(err)
+impl From<std::num::TryFromIntError> for ParserError {
+    fn from(err: std::num::TryFromIntError) -> ParserError {
+        ParserError::TryFromIntError(err)
     }
 }
 
-impl From<bitreader::BitReaderError> for Vp9ParserError {
-    fn from(err: bitreader::BitReaderError) -> Vp9ParserError {
-        Vp9ParserError::BitReaderError(err)
+impl From<bitreader::BitReaderError> for ParserError {
+    fn from(err: bitreader::BitReaderError) -> ParserError {
+        ParserError::BitReaderError(err)
     }
 }
 
-impl std::error::Error for Vp9ParserError {
+impl std::error::Error for ParserError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match *self {
-            Vp9ParserError::IoError(ref e) => Some(e),
-            Vp9ParserError::TryFromSliceError(ref e) => Some(e),
-            Vp9ParserError::TryFromIntError(ref e) => Some(e),
-            Vp9ParserError::BitReaderError(ref e) => Some(e),
+            ParserError::IoError(ref e) => Some(e),
+            ParserError::TryFromSliceError(ref e) => Some(e),
+            ParserError::TryFromIntError(ref e) => Some(e),
+            ParserError::BitReaderError(ref e) => Some(e),
             _ => None,
         }
     }

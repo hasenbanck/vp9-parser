@@ -11,12 +11,12 @@ use std::convert::TryInto;
 
 use bitreader::BitReader;
 
-pub use error::Vp9ParserError;
+pub use error::ParserError;
 
 mod error;
 pub mod ivf;
 
-type Result<T> = std::result::Result<T, Vp9ParserError>;
+type Result<T> = std::result::Result<T, ParserError>;
 
 /// Number of segments allowed in segmentation map.
 const MAX_SEGMENTS: usize = 8;
@@ -334,10 +334,10 @@ impl Metadata {
             let _ = features.insert(id, value);
         }
 
-        let profile = *features.get(&1).ok_or(Vp9ParserError::InvalidMetadata)?;
-        let level = *features.get(&2).ok_or(Vp9ParserError::InvalidMetadata)?;
-        let color_depth = *features.get(&3).ok_or(Vp9ParserError::InvalidMetadata)?;
-        let chroma_subsampling = *features.get(&1).ok_or(Vp9ParserError::InvalidMetadata)?;
+        let profile = *features.get(&1).ok_or(ParserError::InvalidMetadata)?;
+        let level = *features.get(&2).ok_or(ParserError::InvalidMetadata)?;
+        let color_depth = *features.get(&3).ok_or(ParserError::InvalidMetadata)?;
+        let chroma_subsampling = *features.get(&1).ok_or(ParserError::InvalidMetadata)?;
 
         Ok(Self {
             profile: profile.into(),
@@ -440,7 +440,7 @@ pub struct Frame {
 impl Frame {
     /// Creates a frame from the parser state.
     pub(crate) fn new(
-        parser: &Vp9Parser,
+        parser: &Parser,
         uncompressed_header_size: usize,
         compressed_header_size: usize,
         tile_size: usize,
@@ -842,7 +842,7 @@ impl Frame {
 
 /// Parses VP9 bitstreams.
 #[derive(Clone, Debug)]
-pub struct Vp9Parser {
+pub struct Parser {
     ref_frame_sizes: [(u16, u16); 8],
     profile: Profile,
     show_existing_frame: bool,
@@ -897,7 +897,7 @@ pub struct Vp9Parser {
     segment_feature_data: [[i16; 4]; 8],
 }
 
-impl Default for Vp9Parser {
+impl Default for Parser {
     fn default() -> Self {
         Self {
             ref_frame_sizes: [(0u16, 0u16); 8],
@@ -956,7 +956,7 @@ impl Default for Vp9Parser {
     }
 }
 
-impl Vp9Parser {
+impl Parser {
     /// Creates a new parser.
     pub fn new() -> Self {
         Default::default()
@@ -964,7 +964,7 @@ impl Vp9Parser {
 
     /// Resets the state of the parser. Used when switching the bitstream or seeking.
     pub fn reset(&mut self) {
-        *self = Vp9Parser::default();
+        *self = Parser::default();
     }
 
     /// Parses a VP9 bitstream packet and returns the encoded frames.
@@ -972,7 +972,7 @@ impl Vp9Parser {
     /// Packets needs to be supplied in the order they are appearing in the bitstream. The caller
     /// needs to reset the parser if the bitstream is changed or a seek happened. Not resetting the
     /// parser in such cases results in undefined behavior of the decoder.
-    pub fn parse_vp9_packet(&mut self, mut packet: &[u8]) -> Result<Vec<Frame>> {
+    pub fn parse_packet(&mut self, mut packet: &[u8]) -> Result<Vec<Frame>> {
         if packet.is_empty() {
             return Ok(vec![]);
         }
@@ -1004,7 +1004,7 @@ impl Vp9Parser {
                         // Odd, but valid bitstream configuration.
                         let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 0)?;
                         packet = &packet[..frame_size];
-                        let frame = self.parse_vp9_frame(packet)?;
+                        let frame = self.parse_frame(packet)?;
 
                         frames.push(frame);
                     }
@@ -1014,11 +1014,11 @@ impl Vp9Parser {
                         // the previously stored frame.
                         let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 0)?;
                         let (packet, mut left_over) = packet.split_at(frame_size);
-                        let first_frame = self.parse_vp9_frame(packet)?;
+                        let first_frame = self.parse_frame(packet)?;
 
                         let frame_size = self.read_frame_size(&mut entry_data, bytes_size, 1)?;
                         left_over = &left_over[..frame_size];
-                        let second_frame = self.parse_vp9_frame(left_over)?;
+                        let second_frame = self.parse_frame(left_over)?;
 
                         frames.push(first_frame);
                         frames.push(second_frame);
@@ -1030,7 +1030,7 @@ impl Vp9Parser {
                                 self.read_frame_size(&mut entry_data, bytes_size, frame_index)?;
 
                             let (packet_, left_over) = packet.split_at(frame_size);
-                            let frame = self.parse_vp9_frame(packet_)?;
+                            let frame = self.parse_frame(packet_)?;
                             frames.push(frame);
 
                             packet = left_over;
@@ -1043,7 +1043,7 @@ impl Vp9Parser {
         }
 
         // Normal frame.
-        let frame = self.parse_vp9_frame(packet)?;
+        let frame = self.parse_frame(packet)?;
         Ok(vec![frame])
     }
 
@@ -1066,18 +1066,18 @@ impl Vp9Parser {
                 u32::from_le_bytes(entry_data[index * 4..(index * 4) + 4].try_into()?).try_into()?
             }
             _ => {
-                return Err(Vp9ParserError::InvalidFrameSizeByteSize(bytes_size));
+                return Err(ParserError::InvalidFrameSizeByteSize(bytes_size));
             }
         };
         Ok(value)
     }
 
-    fn parse_vp9_frame(&mut self, data: &[u8]) -> Result<Frame> {
+    fn parse_frame(&mut self, data: &[u8]) -> Result<Frame> {
         let mut br = BitReader::new(&data);
 
         let frame_marker = br.read_u8(2)?;
         if frame_marker != 2 {
-            return Err(Vp9ParserError::InvalidFrameMarker);
+            return Err(ParserError::InvalidFrameMarker);
         }
 
         let profile_low_bit = br.read_u8(1)?;
@@ -1223,7 +1223,7 @@ impl Vp9Parser {
         let frame_sync_byte_2 = br.read_u8(8)?;
 
         if frame_sync_byte_0 != 0x49 && frame_sync_byte_1 != 0x83 && frame_sync_byte_2 != 0x42 {
-            return Err(Vp9ParserError::InvalidSyncByte);
+            return Err(ParserError::InvalidSyncByte);
         }
 
         Ok(())
@@ -1299,7 +1299,7 @@ impl Vp9Parser {
                 let sizes = *self
                     .ref_frame_sizes
                     .get(usize::from(self.ref_frame_indices[i]))
-                    .ok_or(Vp9ParserError::InvalidRefFrameIndex)?;
+                    .ok_or(ParserError::InvalidRefFrameIndex)?;
 
                 self.width = sizes.0;
                 self.height = sizes.1;
@@ -1489,7 +1489,7 @@ impl Vp9Parser {
         while br.is_aligned(1) {
             let zero_bit = br.read_bool()?;
             if zero_bit {
-                return Err(Vp9ParserError::InvalidPadding);
+                return Err(ParserError::InvalidPadding);
             }
         }
 
