@@ -433,7 +433,7 @@ pub struct Frame {
     segmentation_temporal_update: bool,
     segmentation_update_data: bool,
     segmentation_abs_or_delta_update: bool,
-    segment_feature_active: [[bool; 4]; 8],
+    segment_feature_enabled: [[bool; 4]; 8],
     segment_feature_data: [[i16; 4]; 8],
 }
 
@@ -500,7 +500,7 @@ impl Frame {
             segmentation_temporal_update: parser.segmentation_temporal_update,
             segmentation_update_data: parser.segmentation_update_data,
             segmentation_abs_or_delta_update: parser.segmentation_abs_or_delta_update,
-            segment_feature_active: parser.segment_feature_active,
+            segment_feature_enabled: parser.segment_feature_enabled,
             segment_feature_data: parser.segment_feature_data,
         }
     }
@@ -830,8 +830,8 @@ impl Frame {
     }
 
     /// Indicates that the corresponding feature is used in a segment.
-    pub fn segment_feature_active(&self) -> &[[bool; 4]; 8] {
-        &self.segment_feature_active
+    pub fn segment_feature_enabled(&self) -> &[[bool; 4]; 8] {
+        &self.segment_feature_enabled
     }
 
     /// Specifies the values of the active features of a segment.
@@ -893,7 +893,7 @@ pub struct Vp9Parser {
     segmentation_temporal_update: bool,
     segmentation_update_data: bool,
     segmentation_abs_or_delta_update: bool,
-    segment_feature_active: [[bool; 4]; 8],
+    segment_feature_enabled: [[bool; 4]; 8],
     segment_feature_data: [[i16; 4]; 8],
 }
 
@@ -950,7 +950,7 @@ impl Default for Vp9Parser {
             segmentation_temporal_update: false,
             segmentation_update_data: false,
             segmentation_abs_or_delta_update: false,
-            segment_feature_active: [[false; 4]; 8],
+            segment_feature_enabled: [[false; 4]; 8],
             segment_feature_data: [[0i16; 4]; 8],
         }
     }
@@ -1414,19 +1414,19 @@ impl Vp9Parser {
             if self.segmentation_update_data {
                 self.segmentation_abs_or_delta_update = br.read_bool()?;
                 for i in 0..MAX_SEGMENTS {
-                    self.segment_feature_active[i][SEG_LVL_ALT_Q] = br.read_bool()?;
-                    if self.segment_feature_active[i][SEG_LVL_ALT_Q] {
+                    self.segment_feature_enabled[i][SEG_LVL_ALT_Q] = br.read_bool()?;
+                    if self.segment_feature_enabled[i][SEG_LVL_ALT_Q] {
                         self.segment_feature_data[i][SEG_LVL_ALT_Q] = br.read_inverse_i16(8)?;
                     };
-                    self.segment_feature_active[i][SEG_LVL_ALT_L] = br.read_bool()?;
-                    if self.segment_feature_active[i][SEG_LVL_ALT_L] {
+                    self.segment_feature_enabled[i][SEG_LVL_ALT_L] = br.read_bool()?;
+                    if self.segment_feature_enabled[i][SEG_LVL_ALT_L] {
                         self.segment_feature_data[i][SEG_LVL_ALT_L] = br.read_inverse_i16(6)?;
                     };
-                    self.segment_feature_active[i][SEG_LVL_REF_FRAME] = br.read_bool()?;
-                    if self.segment_feature_active[i][SEG_LVL_REF_FRAME] {
+                    self.segment_feature_enabled[i][SEG_LVL_REF_FRAME] = br.read_bool()?;
+                    if self.segment_feature_enabled[i][SEG_LVL_REF_FRAME] {
                         self.segment_feature_data[i][SEG_LVL_REF_FRAME] = br.read_inverse_i16(2)?;
                     };
-                    self.segment_feature_active[i][SEG_LVL_SKIP] = br.read_bool()?;
+                    self.segment_feature_enabled[i][SEG_LVL_SKIP] = br.read_bool()?;
                     self.segment_feature_data[i][SEG_LVL_SKIP] = 0;
                 }
             }
