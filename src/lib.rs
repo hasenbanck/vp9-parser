@@ -837,6 +837,12 @@ impl Frame {
     pub fn segment_feature_data(&self) -> &[[i16; 4]; 8] {
         &self.segment_feature_data
     }
+
+    /// Destroys the frame and returns the underlying data buffer.
+    pub fn into_vec(self) -> Vec<u8> {
+        let Frame { data, .. } = self;
+        data
+    }
 }
 
 /// Parses VP9 bitstreams.
