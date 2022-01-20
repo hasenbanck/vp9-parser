@@ -453,7 +453,7 @@ impl Frame {
             frame_to_show_map_idx: parser.frame_to_show_map_idx,
             last_frame_type: parser.last_frame_type,
             frame_type: parser.frame_type,
-            show_frame: parser.show_existing_frame,
+            show_frame: parser.show_frame,
             error_resilient_mode: parser.error_resilient_mode,
             intra_only: parser.intra_only,
             reset_frame_context: parser.reset_frame_context,
@@ -547,6 +547,11 @@ impl Frame {
         self.frame_type
     }
 
+    /// Indicates that the frame is to be displayed.
+    pub fn show_frame(&self) -> bool {
+        self.show_frame
+    }
+
     /// Indicates that error resilient mode is enabled.
     ///
     /// Error resilient mode allows the syntax of a frame to be decoded
@@ -564,8 +569,8 @@ impl Frame {
     }
 
     /// Specifies whether the frame context should be reset to default values.
-    pub fn reset_frame_context(&self) -> FrameType {
-        self.frame_type
+    pub fn reset_frame_context(&self) -> ResetFrameContext {
+        self.reset_frame_context
     }
 
     /// The indices of the used reference frames.
