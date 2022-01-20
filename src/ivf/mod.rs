@@ -1,7 +1,9 @@
 //! IVF container parsing.
 
-use std::convert::{TryFrom, TryInto};
-use std::io::Read;
+use std::{
+    convert::{TryFrom, TryInto},
+    io::Read,
+};
 
 pub use error::IvfError;
 
@@ -35,7 +37,7 @@ impl<R: Read> Ivf<R> {
             frame_rate_rate: u32::from_le_bytes(d[16..=19].try_into()?),
             frame_rate_scale: u32::from_le_bytes(d[20..=23].try_into()?),
             frame_count: u32::from_le_bytes(d[24..=27].try_into()?),
-            reserved: [d[28], d[29], d[30], d[31]],
+            _reserved: [d[28], d[29], d[30], d[31]],
         };
 
         if header.signature != [0x44, 0x4B, 0x49, 0x46] {
@@ -132,7 +134,7 @@ struct IvfHeader {
     frame_rate_rate: u32,
     frame_rate_scale: u32,
     frame_count: u32,
-    reserved: [u8; 4],
+    _reserved: [u8; 4],
 }
 
 /// Frame inside an IVF.

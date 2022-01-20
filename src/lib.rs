@@ -6,8 +6,7 @@
 #![deny(clippy::unwrap_used)]
 
 //! Provides tools to parse VP9 bitstreams and IVF containers.
-use std::collections::HashMap;
-use std::convert::TryInto;
+use std::{collections::HashMap, convert::TryInto};
 
 use bitreader::BitReader;
 
@@ -330,7 +329,7 @@ impl Metadata {
 
         let mut features: HashMap<u8, u8> = HashMap::with_capacity(4);
         while pos < data.len() {
-            let (id, value) = Self::read_feature(&mut pos, &data);
+            let (id, value) = Self::read_feature(&mut pos, data);
             let _ = features.insert(id, value);
         }
 
@@ -1189,7 +1188,7 @@ impl Vp9Parser {
         let tile_size = size - (uncompressed_header_size + compressed_header_size);
 
         let frame = Frame::new(
-            &self,
+            self,
             uncompressed_header_size,
             compressed_header_size,
             tile_size,

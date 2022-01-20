@@ -1,7 +1,9 @@
 use std::fs::File;
 
-use vp9_parser::ivf::{Frame, Ivf};
-use vp9_parser::{ColorDepth, ColorRange, ColorSpace, FrameType, Profile, Subsampling, Vp9Parser};
+use vp9_parser::{
+    ivf::{Frame, Ivf},
+    ColorDepth, ColorRange, ColorSpace, FrameType, Profile, Subsampling, Vp9Parser,
+};
 
 #[test]
 pub fn parse_ivf() {

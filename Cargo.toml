@@ -1,6 +1,6 @@
 [package]
 name = "vp9-parser"
-version = "0.2.6"
+version = "0.3.0"
 authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
 description = "Provides tools to parse VP9 bitstreams and IVF containers."
 license = "Zlib OR MIT OR Apache-2.0"
@@ -8,7 +8,7 @@ readme = "README.md"
 repository = "https://github.com/hasenbanck/vp9-parser"
 categories = ["multimedia"]
 keywords = ["video", "vp9", "codec"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 bitreader = "0.3"
