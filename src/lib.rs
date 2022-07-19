@@ -336,7 +336,7 @@ impl Metadata {
         let profile = *features.get(&1).ok_or(Vp9ParserError::InvalidMetadata)?;
         let level = *features.get(&2).ok_or(Vp9ParserError::InvalidMetadata)?;
         let color_depth = *features.get(&3).ok_or(Vp9ParserError::InvalidMetadata)?;
-        let chroma_subsampling = *features.get(&1).ok_or(Vp9ParserError::InvalidMetadata)?;
+        let chroma_subsampling = *features.get(&4).ok_or(Vp9ParserError::InvalidMetadata)?;
 
         Ok(Self {
             profile: profile.into(),
@@ -976,7 +976,7 @@ impl Vp9Parser {
     ///
     /// Packets needs to be supplied in the order they are appearing in the bitstream. The caller
     /// needs to reset the parser if the bitstream is changed or a seek happened. Not resetting the
-    /// parser in such cases results in undefined behavior of the decoder.
+    /// parser in such cases results in garbage data or errors.
     pub fn parse_packet(&mut self, mut packet: Vec<u8>) -> Result<Vec<Frame>> {
         if packet.is_empty() {
             return Ok(vec![]);
@@ -1054,7 +1054,7 @@ impl Vp9Parser {
 
     fn read_frame_size(
         &self,
-        entry_data: &mut Vec<u8>,
+        entry_data: &mut [u8],
         bytes_size: usize,
         index: usize,
     ) -> Result<usize> {
@@ -1187,8 +1187,6 @@ impl Vp9Parser {
         let compressed_header_size: usize = (br.read_u16(16)?).into();
         self.trailing_bits(&mut br)?;
         let uncompressed_header_size: usize = (br.position() / 8).try_into()?;
-
-        drop(br);
 
         let size = data.len();
         let tile_size = size - (uncompressed_header_size + compressed_header_size);
@@ -1538,14 +1536,14 @@ mod tests {
 
     #[test]
     fn parse_metadata() -> Result<()> {
-        let data: Vec<u8> = vec![0x04, 0x03, 0x03, 0x08, 0x02, 0x28, 0x01, 0x03];
+        let data: Vec<u8> = vec![0x04, 0x02, 0x03, 0x08, 0x02, 0x28, 0x01, 0x03];
 
         let metadata = Metadata::new(&data)?;
 
         assert_eq!(metadata.profile(), Profile::Profile3);
         assert_eq!(metadata.level(), Level::Level4);
         assert_eq!(metadata.color_depth(), ColorDepth::Depth8);
-        assert_eq!(metadata.chroma_subsampling, MetadataSubsampling::Yuv444);
+        assert_eq!(metadata.chroma_subsampling(), MetadataSubsampling::Yuv422);
 
         Ok(())
     }
