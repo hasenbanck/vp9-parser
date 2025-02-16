@@ -1451,8 +1451,8 @@ impl Vp9Parser {
     fn tile_info(&mut self, br: &mut BitReader) -> Result<()> {
         let min_log2_tile_cols = self.calc_min_log2_tile_cols()?;
         let max_log2_tile_cols = self.calc_max_log2_tile_cols()?;
-        self.tile_rows_log2 = min_log2_tile_cols;
-        while self.tile_rows_log2 < max_log2_tile_cols {
+        self.tile_cols_log2 = min_log2_tile_cols;
+        while self.tile_cols_log2 < max_log2_tile_cols {
             let increment_tile_cols_log2 = br.read_bool()?;
             if increment_tile_cols_log2 {
                 self.tile_cols_log2 += 1;
